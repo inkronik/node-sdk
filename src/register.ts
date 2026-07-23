@@ -1,4 +1,4 @@
-import { initInkronik as initializeInkronik } from './auto'
+import { initInkronik as initializeInkronik } from './auto.js'
 
 initializeInkronik()
 

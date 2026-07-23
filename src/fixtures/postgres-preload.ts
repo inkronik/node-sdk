@@ -1,4 +1,4 @@
-import { initInkronik } from '../auto'
+import { initInkronik } from '../auto.js'
 
 const captureTelemetry = new Proxy(fetch, {
     apply: (_target, _thisArgument, argumentsList) => {

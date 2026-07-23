@@ -1,8 +1,8 @@
 /* eslint-disable max-lines -- Node client regression suite covers multiple public SDK surfaces together. */
 import { describe, expect, test } from 'bun:test'
-import { InkronikClient } from './client'
-import { createInkronikClientFromEnv } from './env'
-import { runWithTraceContext } from './trace-context'
+import { InkronikClient } from './client.js'
+import { createInkronikClientFromEnv } from './env.js'
+import { runWithTraceContext } from './trace-context.js'
 
 interface PostgresJsSqlTestDouble {
     (strings: TemplateStringsArray, ...values: ReadonlyArray<unknown>): unknown

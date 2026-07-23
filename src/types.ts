@@ -1,4 +1,4 @@
-import type { IngestTelemetryResponse, IngestTelemetrySignal } from './protocol/types'
+import type { IngestTelemetryResponse, IngestTelemetrySignal } from './protocol/types.js'
 
 export interface InkronikClientOptions {
     readonly collectorUrl: string

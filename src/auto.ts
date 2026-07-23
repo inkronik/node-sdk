@@ -1,8 +1,8 @@
-import { createInkronikClientFromEnv, setDefaultInkronikClient } from './env'
-import type { InkronikClient } from './client'
-import { startPgAutoInstrumentation } from './pg-auto'
-import { startPostgresAutoInstrumentation } from './postgres-auto'
-import type { InitInkronikOptions } from './types'
+import { createInkronikClientFromEnv, setDefaultInkronikClient } from './env.js'
+import type { InkronikClient } from './client.js'
+import { startPgAutoInstrumentation } from './pg-auto.js'
+import { startPostgresAutoInstrumentation } from './postgres-auto.js'
+import type { InitInkronikOptions } from './types.js'
 
 const BULLMQ_MODULE_NAME = 'bullmq'
 

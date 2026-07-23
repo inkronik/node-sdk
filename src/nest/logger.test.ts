@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { LoggerService } from '@nestjs/common'
-import { InkronikClient } from '../client'
-import { InkronikNestLogger } from './logger'
+import { InkronikClient } from '../client.js'
+import { InkronikNestLogger } from './logger.js'
 
 interface SentRequest {
     readonly init?: RequestInit

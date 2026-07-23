@@ -1,5 +1,5 @@
-import { InkronikClient } from './client'
-import type { CreateInkronikClientFromEnvOptions, InkronikClientOptions } from './types'
+import { InkronikClient } from './client.js'
+import type { CreateInkronikClientFromEnvOptions, InkronikClientOptions } from './types.js'
 
 const requiredEnvKeys = ['INKRONIK_COLLECTOR_URL', 'INKRONIK_INGEST_API_KEY'] as const
 const defaultClientState: { client: InkronikClient | null } = {

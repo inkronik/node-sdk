@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { describe, expect, test } from 'bun:test'
-import { initInkronik, shutdownInkronik } from './auto'
-import { runWithTraceContext } from './trace-context'
+import { initInkronik, shutdownInkronik } from './auto.js'
+import { runWithTraceContext } from './trace-context.js'
 
 describe('initInkronik', () => {
     test('instruments a static postgres import when the agent is preloaded', async () => {

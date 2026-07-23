@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import type { PostgresAutoInstrumentationHook, StartPostgresAutoInstrumentationInput } from './types'
+import type { PostgresAutoInstrumentationHook, StartPostgresAutoInstrumentationInput } from './types.js'
 
 const POSTGRES_AUTO_INSTRUMENTATION_HOOK = Symbol.for('inkronik.postgresAutoInstrumentationHook')
 const POSTGRES_AUTO_INSTRUMENTATION_PLUGIN = Symbol.for('inkronik.postgresAutoInstrumentationPlugin')

@@ -1,8 +1,8 @@
 /* eslint-disable max-classes-per-file -- The pg test module intentionally mirrors separate Client and Pool constructors. */
 import { describe, expect, test } from 'bun:test'
-import { startPgAutoInstrumentation } from './pg-auto'
-import { runWithTraceContext } from './trace-context'
-import type { DatabaseQuerySpanInput, PgAutoInstrumentationClient, PgModule, PgQueryCallback } from './types'
+import { startPgAutoInstrumentation } from './pg-auto.js'
+import { runWithTraceContext } from './trace-context.js'
+import type { DatabaseQuerySpanInput, PgAutoInstrumentationClient, PgModule, PgQueryCallback } from './types.js'
 
 const traceContext = {
     traceId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',

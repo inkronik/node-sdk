@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { InkronikClient } from '../client'
-import type { HttpLikeRequest, HttpLikeResponse } from '../types'
-import { createInkronikExpressMiddleware } from './middleware'
+import { InkronikClient } from '../client.js'
+import type { HttpLikeRequest, HttpLikeResponse } from '../types.js'
+import { createInkronikExpressMiddleware } from './middleware.js'
 
 interface SentRequest {
     readonly init?: RequestInit

@@ -1,6 +1,6 @@
 import postgres from 'postgres'
-import { shutdownInkronik } from '../auto'
-import { runWithTraceContext } from '../trace-context'
+import { shutdownInkronik } from '../auto.js'
+import { runWithTraceContext } from '../trace-context.js'
 
 const sql = postgres('postgres://postgres:postgres@localhost:5432/static_fixture', { max: 0 })
 const queryState: { query?: Promise<ReadonlyArray<ReadonlyArray<string>>> & { values: () => unknown } } = {}

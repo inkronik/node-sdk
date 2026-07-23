@@ -1,8 +1,8 @@
 /* eslint-disable functional/functional-parameters -- Nest LoggerService requires variadic method signatures. */
 import { ConsoleLogger, type LoggerService, type LogLevel } from '@nestjs/common'
-import type { LoggerRecord } from '../types'
-import { safeJsonStringify } from '../utils'
-import type { InkronikNestLoggerOptions } from './types'
+import type { LoggerRecord } from '../types.js'
+import { safeJsonStringify } from '../utils.js'
+import type { InkronikNestLoggerOptions } from './types.js'
 
 const getContext = (optionalParams: ReadonlyArray<unknown>): string | undefined => {
     const lastParam = optionalParams.at(-1)

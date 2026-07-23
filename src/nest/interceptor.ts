@@ -1,7 +1,7 @@
 import { Observable, tap } from 'rxjs'
 import { Injectable, type CallHandler, type ExecutionContext, type NestInterceptor } from '@nestjs/common'
-import type { InkronikClient } from '../client'
-import type { CaptureRequestResponseOptions, HttpLikeRequest, HttpLikeResponse, ResolvedCaptureRequestResponseOptions } from '../types'
+import type { InkronikClient } from '../client.js'
+import type { CaptureRequestResponseOptions, HttpLikeRequest, HttpLikeResponse, ResolvedCaptureRequestResponseOptions } from '../types.js'
 import {
     buildCaptureContext,
     getHttpContentLength,
@@ -15,9 +15,9 @@ import {
     resolveAutoInstrumentFetchOptions,
     resolveCaptureOptions,
     stringifyHttpBodySample,
-} from '../http-utils'
-import { runWithTraceContext, toTraceparent } from '../trace-context'
-import { safeJsonStringify, truncateUtf8, utf8ByteLength } from '../utils'
+} from '../http-utils.js'
+import { runWithTraceContext, toTraceparent } from '../trace-context.js'
+import { safeJsonStringify, truncateUtf8, utf8ByteLength } from '../utils.js'
 
 @Injectable()
 export class InkronikNestInterceptor implements NestInterceptor {

@@ -1,5 +1,5 @@
-import type { InkronikClient } from './client'
-import type { LoggerRecord } from './types'
+import type { InkronikClient } from './client.js'
+import type { LoggerRecord } from './types.js'
 
 export interface InkronikLogger {
     readonly trace: (message: string, attributes?: Record<string, string>) => void

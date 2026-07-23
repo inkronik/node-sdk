@@ -23,12 +23,12 @@ import type {
     SumInput,
     PostgresJsSql,
     TraceContext,
-} from './types'
-import type { IngestTelemetryRequest, IngestTelemetryResponse, IngestTelemetrySignal } from './protocol/types'
-import { getDatabaseOperation, normalizeDatabaseStatement } from './database'
-import { getHttpHeaderValue, resolveHttpMessageSize } from './http-utils'
-import { createChildTraceContext, getCurrentTraceContext, parseTraceparent, runWithTraceContext, toTraceparent } from './trace-context'
-import { createUuid, mergeAttributes, normalizeCollectorUrl, nowIso, sortNumbers, toStringMap } from './utils'
+} from './types.js'
+import type { IngestTelemetryRequest, IngestTelemetryResponse, IngestTelemetrySignal } from './protocol/types.js'
+import { getDatabaseOperation, normalizeDatabaseStatement } from './database.js'
+import { getHttpHeaderValue, resolveHttpMessageSize } from './http-utils.js'
+import { createChildTraceContext, getCurrentTraceContext, parseTraceparent, runWithTraceContext, toTraceparent } from './trace-context.js'
+import { createUuid, mergeAttributes, normalizeCollectorUrl, nowIso, sortNumbers, toStringMap } from './utils.js'
 
 // Distributes over the signal union so each member loses `service_version` individually. A plain
 // Omit<IngestTelemetrySignal, 'service_version'> would instead collapse the union to its common keys and lose

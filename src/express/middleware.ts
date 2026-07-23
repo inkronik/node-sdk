@@ -1,5 +1,5 @@
-import type { InkronikClient } from '../client'
-import type { CaptureRequestResponseOptions, HttpLikeNext, HttpLikeRequest, HttpLikeResponse } from '../types'
+import type { InkronikClient } from '../client.js'
+import type { CaptureRequestResponseOptions, HttpLikeNext, HttpLikeRequest, HttpLikeResponse } from '../types.js'
 import {
     buildCaptureContext,
     getBodyChunkSizeBytes,
@@ -15,9 +15,9 @@ import {
     resolveCaptureOptions,
     stringifyHttpBodySample,
     toBodyChunk,
-} from '../http-utils'
-import { runWithTraceContext, toTraceparent } from '../trace-context'
-import { truncateUtf8 } from '../utils'
+} from '../http-utils.js'
+import { runWithTraceContext, toTraceparent } from '../trace-context.js'
+import { truncateUtf8 } from '../utils.js'
 
 export const createInkronikExpressMiddleware = ({
     client,

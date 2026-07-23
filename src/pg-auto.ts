@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { createRequire } from 'node:module'
-import { getDatabaseOperation, normalizeDatabaseStatement } from './database'
-import { getCurrentTraceContext } from './trace-context'
+import { getDatabaseOperation, normalizeDatabaseStatement } from './database.js'
+import { getCurrentTraceContext } from './trace-context.js'
 import type {
     DatabaseInstrumentationOptions,
     PgAutoInstrumentationClient,
@@ -11,7 +11,7 @@ import type {
     PgQueryMethod,
     PgQueryTarget,
     StartPgAutoInstrumentationInput,
-} from './types'
+} from './types.js'
 
 const PG_MODULE_NAME = 'pg'
 const INKRONIK_ORIGINAL_PG_QUERY = Symbol.for('inkronik.originalPgQuery')

@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import { lastValueFrom, Observable, of } from 'rxjs'
 import { type CallHandler, type ExecutionContext } from '@nestjs/common'
-import { InkronikClient } from '../client'
-import type { HttpLikeRequest, HttpLikeResponse } from '../types'
-import { InkronikNestInterceptor } from './interceptor'
+import { InkronikClient } from '../client.js'
+import type { HttpLikeRequest, HttpLikeResponse } from '../types.js'
+import { InkronikNestInterceptor } from './interceptor.js'
 
 interface SentRequest {
     readonly init?: RequestInit

@@ -10,9 +10,9 @@ import type {
     ResolvedCaptureRequestResponseOptions,
     ResolvedCaptureRedactionOptions,
     ResolveHttpMessageSizeInput,
-} from './types'
-import { createRootTraceContext, parseTraceparent } from './trace-context'
-import { safeJsonStringify, toStringMap, truncateUtf8, utf8ByteLength } from './utils'
+} from './types.js'
+import { createRootTraceContext, parseTraceparent } from './trace-context.js'
+import { safeJsonStringify, toStringMap, truncateUtf8, utf8ByteLength } from './utils.js'
 
 const DEFAULT_MAX_BODY_BYTES = 16_384
 const DEFAULT_MAX_BODY_SAMPLE_DEPTH = 5
