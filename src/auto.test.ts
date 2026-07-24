@@ -148,7 +148,7 @@ describe('initInkronik', () => {
                     spanId: 'bbbbbbbbbbbbbbbb',
                     parentSpanId: '',
                 },
-                () => sql.unsafe('SELECT id FROM account WHERE email = $1', ['demo@codemask.com']).values() as unknown,
+                () => sql.unsafe('SELECT id FROM account WHERE email = $1', ['demo@example.com']).values() as unknown,
             )
 
             expect(result as unknown).toEqual([['account_123']])

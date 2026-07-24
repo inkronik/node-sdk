@@ -21,7 +21,7 @@ await runWithTraceContext(
         spanId: 'bbbbbbbbbbbbbbbb',
         parentSpanId: '',
     },
-    () => sql.unsafe('SELECT id FROM account WHERE email = $1', ['demo@codemask.com']).values(),
+    () => sql.unsafe('SELECT id FROM account WHERE email = $1', ['demo@example.com']).values(),
 )
 
 await sql.end()

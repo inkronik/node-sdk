@@ -1,6 +1,6 @@
 # Releasing
 
-`@inkronik/node` is released from the `Release` GitHub Actions workflow. Release It performs the version bump, release commit, Git tag, push,
+`@inkronik/node-sdk` is released from the `Release` GitHub Actions workflow. Release It performs the version bump, release commit, Git tag, push,
 GitHub Release, and npm publication. Publication runs only after the release commit and tag have been pushed. The workflow runs the full test,
 typecheck, lint, format, build, and package-content checks before changing anything.
 
@@ -37,7 +37,7 @@ this workflow to bypass the rule or use a release-specific GitHub App token.
 
 ## Enable npm Trusted Publishing
 
-After `@inkronik/node` exists on npm, configure its trusted publisher with:
+After `@inkronik/node-sdk` exists on npm, configure its trusted publisher with:
 
 - provider: GitHub Actions;
 - organisation or user: `inkronik`;
@@ -49,7 +49,7 @@ After `@inkronik/node` exists on npm, configure its trusted publisher with:
 The same configuration can be created with npm CLI 11.15 or newer:
 
 ```bash
-npx npm@11.18.0 trust github @inkronik/node \
+npx npm@11.18.0 trust github @inkronik/node-sdk \
   --repo inkronik/node-sdk \
   --file release.yaml \
   --environment npm \

@@ -536,7 +536,7 @@ describe('InkronikClient', () => {
                 parentSpanId: '',
             },
             () => {
-                const tracedQuery = tracedSql.unsafe('SELECT id FROM account WHERE email = $1', ['demo@codemask.com'])
+                const tracedQuery = tracedSql.unsafe('SELECT id FROM account WHERE email = $1', ['demo@example.com'])
 
                 if (!hasPostgresQueryValues(tracedQuery)) {
                     throw new Error('Expected traced query to preserve values()')

@@ -5,10 +5,23 @@ Telemetry SDK for sending Node.js and Bun application signals to the Inkronik Co
 ## Installation
 
 ```bash
-bun add @inkronik/node
+bun add @inkronik/node-sdk
 ```
 
 The package requires Node.js 20 or newer. Bun is supported for preload-based automatic PostgreSQL instrumentation.
+
+## Configuration
+
+Create an ingest API key in your Inkronik workspace and configure the SDK through environment variables:
+
+```bash
+export INKRONIK_COLLECTOR_URL=https://collector.inkronik.codemask.dev
+export INKRONIK_INGEST_API_KEY=your_ingest_api_key
+export INKRONIK_SERVICE_NAME=orders-api
+```
+
+`INKRONIK_APPLICATION_ID`, `INKRONIK_SERVICE_VERSION`, `INKRONIK_POD_NAME`, and `INKRONIK_ENVIRONMENT` are optional. Keep the ingest API key
+server-side and never expose it in browser bundles or source control.
 
 The package is split into:
 
@@ -24,7 +37,7 @@ The package is split into:
 ## Core
 
 ```ts
-import { createInkronikClientFromEnv } from '@inkronik/node'
+import { createInkronikClientFromEnv } from '@inkronik/node-sdk'
 
 const inkronik = createInkronikClientFromEnv()
 
@@ -44,7 +57,7 @@ Load Inkronik before the application entrypoint:
 
 ```ts
 // inkronik-trace.ts
-import { initInkronik } from '@inkronik/node/auto'
+import { initInkronik } from '@inkronik/node-sdk/auto'
 
 export const inkronik = initInkronik()
 ```
@@ -56,7 +69,7 @@ bun --preload ./inkronik-trace.ts src/main.ts
 For env-only setup, preload the register entrypoint directly:
 
 ```bash
-bun --preload @inkronik/node/register src/main.ts
+bun --preload @inkronik/node-sdk/register src/main.ts
 ```
 
 The preload agent initializes the default client, starts runtime metrics, and instruments global `fetch`, Postgres.js, and `pg` before application code runs.
@@ -69,8 +82,8 @@ instrumentation by default, so outbound `fetch` calls made while handling a requ
 
 ```ts
 import express from 'express'
-import { createInkronikClientFromEnv } from '@inkronik/node'
-import { createInkronikExpressMiddleware } from '@inkronik/node/express'
+import { createInkronikClientFromEnv } from '@inkronik/node-sdk'
+import { createInkronikExpressMiddleware } from '@inkronik/node-sdk/express'
 
 const app = express()
 const inkronik = createInkronikClientFromEnv()
@@ -83,8 +96,8 @@ app.use(createInkronikExpressMiddleware({ client: inkronik }))
 
 ```ts
 import { APP_INTERCEPTOR } from '@nestjs/core'
-import { createInkronikClientFromEnv } from '@inkronik/node'
-import { InkronikNestInterceptor, InkronikNestLogger } from '@inkronik/node/nest'
+import { createInkronikClientFromEnv } from '@inkronik/node-sdk'
+import { InkronikNestInterceptor, InkronikNestLogger } from '@inkronik/node-sdk/nest'
 
 const inkronik = createInkronikClientFromEnv()
 const logger = new InkronikNestLogger({ client: inkronik })
@@ -127,7 +140,7 @@ with `?`, while `unsafe()` statements are normalized and truncated before captur
 Configure or disable the automatic integration in the preload file:
 
 ```ts
-import { initInkronik } from '@inkronik/node/auto'
+import { initInkronik } from '@inkronik/node-sdk/auto'
 
 initInkronik({
     instrumentations: {
@@ -153,7 +166,7 @@ Automatic module loading currently targets Bun. When running without the Bun pre
 ```ts
 import postgres from 'postgres'
 import { drizzle } from 'drizzle-orm/postgres-js'
-import { createInkronikClientFromEnv } from '@inkronik/node'
+import { createInkronikClientFromEnv } from '@inkronik/node-sdk'
 
 const inkronik = createInkronikClientFromEnv()
 const sql = inkronik.instrumentPostgres({
@@ -166,7 +179,7 @@ const db = drizzle(sql)
 
 Pass `{ bufferLogs: true }` to `NestFactory.create`, then call `app.useLogger(logger)` and `app.flushLogs()` to forward Nest startup logs as well.
 
-Request bodies and successful response samples are captured by default with a 16 KiB body limit. Response samples keep object fields, truncate strings to 10 characters, keep numbers/booleans, and keep only the first array item plus `...` when more items exist. Successful raw response bodies require `captureResponseBody: true`; error response bodies are captured automatically. The Collector applies server-side redaction before publishing `request_response_capture` signals to Kafka.
+Request bodies and successful response samples are captured by default with a 16 KiB body limit. Response samples keep object fields, truncate strings to 10 characters, keep numbers/booleans, and keep only the first array item plus `...` when more items exist. Successful raw response bodies require `captureResponseBody: true`; error response bodies are captured automatically. The Collector applies server-side redaction before persisting request/response capture signals.
 
 Framework adapters resolve the trace user id from `request.user` or `request.currentAccount` by default, preferring `uuid`, then `id`. Pass `getUserId` when your authentication context uses a different shape.
 
