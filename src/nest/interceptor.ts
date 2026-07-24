@@ -3,6 +3,7 @@ import { Injectable, type CallHandler, type ExecutionContext, type NestIntercept
 import type { InkronikClient } from '../client.js'
 import type { CaptureRequestResponseOptions, HttpLikeRequest, HttpLikeResponse, ResolvedCaptureRequestResponseOptions } from '../types.js'
 import {
+    acceptsEventStream,
     buildCaptureContext,
     getHttpContentLength,
     getHttpBodySample,
@@ -43,7 +44,7 @@ export class InkronikNestInterceptor implements NestInterceptor {
         const http = context.switchToHttp()
         const request = http.getRequest<HttpLikeRequest>()
 
-        if (this.captureOptions.exclude(request)) {
+        if (acceptsEventStream(request) || this.captureOptions.exclude(request)) {
             return next.handle()
         }
 
