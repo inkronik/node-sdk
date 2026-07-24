@@ -103,6 +103,31 @@ const getSignals = (request: SentRequest) => {
 }
 
 describe('InkronikNestInterceptor', () => {
+    test('excludes SSE requests before setting response headers or creating telemetry', async () => {
+        const { client, requests } = createTestClient()
+        const request = {
+            ...createRequest(),
+            originalUrl: '/events',
+            route: { path: '/events' },
+            headers: { Accept: 'application/json, text/event-stream; charset=utf-8' },
+        }
+        const { response } = createResponse()
+        const headersSentResponse: TestResponse = {
+            ...response,
+            setHeader: () => {
+                throw new Error('Cannot set headers after they are sent to the client')
+            },
+        }
+        const interceptor = new InkronikNestInterceptor(client)
+        const next: CallHandler = { handle: () => of({ data: 'ping' }) }
+
+        const result = await lastValueFrom(interceptor.intercept(createExecutionContext({ request, response: headersSentResponse }), next))
+        await client.shutdown()
+
+        expect(result).toEqual({ data: 'ping' })
+        expect(requests).toHaveLength(0)
+    })
+
     test('emits server span, metrics, and request response capture by default', async () => {
         const { client, requests } = createTestClient()
         const request = createRequest()

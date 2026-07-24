@@ -374,6 +374,11 @@ const hasHeaderValue = ({
     readonly name: string
 }): boolean => getHttpHeaderValue({ headers, name }).toLowerCase().includes(expected)
 
+export const acceptsEventStream = (request: HttpLikeRequest): boolean =>
+    getHttpHeaderValue({ headers: getRequestHeaders(request), name: 'accept' })
+        .split(',')
+        .some(value => value.split(';')[0]?.trim().toLowerCase() === TEXT_EVENT_STREAM)
+
 export const inferHttpRequestKind = (context: HttpCaptureContext): HttpRequestKind => {
     if (
         hasHeaderValue({ expected: TEXT_EVENT_STREAM, headers: context.requestHeaders, name: 'accept' }) ||
