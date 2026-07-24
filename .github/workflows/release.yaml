@@ -3,16 +3,6 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
-      increment:
-        description: Version increment; current publishes the version already in package.json
-        required: true
-        default: current
-        type: choice
-        options:
-          - current
-          - patch
-          - minor
-          - major
       branch:
         description: Stable releases use main; prereleases use rc
         required: true
@@ -93,7 +83,6 @@ jobs:
           BOOTSTRAP_NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           DRY_RUN: ${{ inputs.dry_run }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          INCREMENT: ${{ inputs.increment }}
           RELEASE_BRANCH: ${{ inputs.branch }}
         run: |
           if [[ "$DRY_RUN" != "true" && -n "$BOOTSTRAP_NPM_TOKEN" ]]; then
@@ -105,17 +94,11 @@ jobs:
             DRY_RUN_ARGS=(--dry-run)
           fi
 
-          case "$RELEASE_BRANCH:$INCREMENT" in
-            main:current)
-              bun run release -- --ci --no-increment "${DRY_RUN_ARGS[@]}"
+          case "$RELEASE_BRANCH" in
+            main)
+              bun run release -- --ci "${DRY_RUN_ARGS[@]}"
               ;;
-            main:patch|main:minor|main:major)
-              bun run release -- --ci "$INCREMENT" "${DRY_RUN_ARGS[@]}"
-              ;;
-            rc:current)
-              bun run release -- --ci --preRelease "${DRY_RUN_ARGS[@]}"
-              ;;
-            rc:patch|rc:minor|rc:major)
-              bun run release -- --ci "$INCREMENT" --preRelease=rc "${DRY_RUN_ARGS[@]}"
+            rc)
+              bun run release -- --ci --preRelease=rc "${DRY_RUN_ARGS[@]}"
               ;;
           esac
