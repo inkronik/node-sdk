@@ -1,0 +1,22 @@
+{
+  "$schema": "https://unpkg.com/release-it@20/schema/release-it.json",
+  "git": {
+    "requireCleanWorkingDir": true,
+    "requireUpstream": true,
+    "commitMessage": "chore(release): v${version}",
+    "tagName": "v${version}",
+    "tagAnnotation": "v${version}"
+  },
+  "github": {
+    "release": true,
+    "releaseName": "v${version}",
+    "autoGenerate": true
+  },
+  "npm": {
+    "publish": false,
+    "skipChecks": true
+  },
+  "hooks": {
+    "after:git:release": "bun scripts/publish-release.ts ${version}"
+  }
+}

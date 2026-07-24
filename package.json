@@ -43,6 +43,7 @@
     "check:format": "prettier --check .",
     "check:lint": "eslint src",
     "pack:check": "npm pack --dry-run",
+    "release": "release-it",
     "test": "bun test ./src",
     "typecheck": "bun tsc --noEmit --project tsconfig.json"
   },
@@ -95,6 +96,7 @@
     "eslint-config-codemask": "2.2.1",
     "postgres": "3.4.8",
     "prettier": "3.8.1",
+    "release-it": "20.2.1",
     "rxjs": "7.8.2",
     "typescript": "5.9.3"
   },
