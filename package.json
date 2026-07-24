@@ -1,6 +1,6 @@
 {
   "name": "@inkronik/node-sdk",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Inkronik telemetry SDK for Node.js, Bun, Express, and NestJS applications.",
   "license": "MIT",
   "type": "module",
