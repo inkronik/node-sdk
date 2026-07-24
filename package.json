@@ -2,7 +2,7 @@
   "name": "@inkronik/node-sdk",
   "version": "1.0.0",
   "description": "Inkronik telemetry SDK for Node.js, Bun, Express, and NestJS applications.",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "type": "module",
   "sideEffects": [
     "./dist/register.js"
