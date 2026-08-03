@@ -47,9 +47,33 @@ inkronik.log({
     message: 'Invoice created',
 })
 
+inkronik.event({
+    name: 'invoice_created',
+    category: 'billing',
+    level: 'info',
+    message: 'Invoice was created and queued for delivery',
+    attributes: { invoice_id: invoice.uuid },
+})
+
+try {
+    await capturePayment()
+} catch (error) {
+    inkronik.captureError(error, {
+        name: 'payment_capture_failed',
+        message: 'Payment remained pending and a retry was scheduled',
+        attributes: { provider: 'stripe' },
+    })
+}
+
 inkronik.startRuntimeMetrics()
 const tracedFetch = inkronik.instrumentFetch()
 ```
+
+Events support `info`, `warning`, and `error` levels and default to `info`. `captureError` records a handled error with its bounded type, message,
+stack, and string code when available; it does not turn a successful request span into a failed span.
+
+Inside Express or NestJS request instrumentation, events automatically inherit the active trace, span, session, and user ID. Configure
+`getUserContext` on the adapter when events also need safe user attributes. An explicit event `user` overrides the inherited request user.
 
 ## Agent Preload
 

@@ -1,6 +1,8 @@
 /* eslint-disable max-lines -- Split SDK instrumentation into modules in a dedicated refactor. */
 import { monitorEventLoopDelay } from 'node:perf_hooks'
 import type {
+    CaptureErrorOptions,
+    CaptureEventSignalInput,
     CaptureHttpExchangeInput,
     CaptureMessagingSpanInput,
     BullMQJobLike,
@@ -27,8 +29,25 @@ import type {
 import type { IngestTelemetryRequest, IngestTelemetryResponse, IngestTelemetrySignal } from './protocol/types.js'
 import { getDatabaseOperation, normalizeDatabaseStatement } from './database.js'
 import { getHttpHeaderValue, resolveHttpMessageSize } from './http-utils.js'
-import { createChildTraceContext, getCurrentTraceContext, parseTraceparent, runWithTraceContext, toTraceparent } from './trace-context.js'
-import { createUuid, mergeAttributes, normalizeCollectorUrl, nowIso, sortNumbers, toStringMap } from './utils.js'
+import {
+    createChildTraceContext,
+    getCurrentTelemetryContext,
+    getCurrentTraceContext,
+    parseTraceparent,
+    runWithTraceContext,
+    toTraceparent,
+} from './trace-context.js'
+import {
+    createUuid,
+    getUserEventAttributes,
+    mergeAttributes,
+    normalizeCapturedError,
+    normalizeCollectorUrl,
+    nowIso,
+    sortNumbers,
+    toStringMap,
+    truncateUtf8,
+} from './utils.js'
 
 // Distributes over the signal union so each member loses `service_version` individually. A plain
 // Omit<IngestTelemetrySignal, 'service_version'> would instead collapse the union to its common keys and lose
@@ -52,6 +71,9 @@ const INKRONIK_ORIGINAL_BULLMQ_QUEUE_ADD = Symbol.for('inkronik.originalBullMQQu
 const INKRONIK_INSTRUMENTED_POSTGRES = Symbol.for('inkronik.instrumentedPostgres')
 const INKRONIK_TRACE_METADATA_KEY = '__inkronik'
 const DEFAULT_MESSAGING_SYSTEM = 'bullmq'
+const DEFAULT_EVENT_LEVEL = 'info'
+const MAX_EVENT_MESSAGE_BYTES = 4096
+const emptyCapturedError = { type: '', message: '', stack: '', code: '', handled: false } as const
 
 const severityByLevel: Record<string, { readonly number: number; readonly text: string }> = {
     trace: { number: 1, text: 'TRACE' },
@@ -223,24 +245,17 @@ export class InkronikClient {
     }
 
     event(input: EventInput): void {
-        this.enqueue({
-            signal_type: 'event',
-            environment: this.environment,
-            timestamp: input.timestamp ?? nowIso(),
-            source: this.source,
-            attributes: mergeAttributes({ defaults: this.defaultAttributes, overrides: input.attributes }),
-            payload: {
-                event_id: createUuid(),
-                event_name: input.name,
-                event_category: input.category,
-                service_name: this.serviceName,
-                source_type: 'application',
-                user_id: input.userId ?? '',
-                session_id: input.sessionId ?? '',
-                trace_id: input.traceId ?? '',
-                span_id: input.spanId ?? '',
-                event_attributes: input.attributes ?? {},
+        this.captureEvent({ event: input, error: emptyCapturedError })
+    }
+
+    captureError(error: unknown, options: CaptureErrorOptions): void {
+        this.captureEvent({
+            event: {
+                ...options,
+                category: options.category ?? 'error',
+                level: 'error',
             },
+            error: normalizeCapturedError(error),
         })
     }
 
@@ -1047,6 +1062,42 @@ export class InkronikClient {
         // eslint-disable-next-line functional/immutable-data
         this.globalFetchRestore = null
         return this.flush()
+    }
+
+    private captureEvent({ event: input, error }: CaptureEventSignalInput): void {
+        const traceContext = getCurrentTraceContext()
+        const telemetryContext = getCurrentTelemetryContext()
+        const inheritedUser = telemetryContext?.resolveUser()
+        const user = input.user ?? (input.userId === undefined ? inheritedUser : { id: input.userId })
+        const userAttributes = getUserEventAttributes(user)
+        const eventAttributes = { ...(input.attributes ?? {}), ...userAttributes }
+
+        this.enqueue({
+            signal_type: 'event',
+            environment: this.environment,
+            timestamp: input.timestamp ?? nowIso(),
+            source: this.source,
+            attributes: mergeAttributes({ defaults: this.defaultAttributes, overrides: eventAttributes }),
+            payload: {
+                event_id: createUuid(),
+                event_name: input.name,
+                event_category: input.category,
+                event_level: input.level ?? DEFAULT_EVENT_LEVEL,
+                message: truncateUtf8({ maxBytes: MAX_EVENT_MESSAGE_BYTES, value: input.message ?? '' }),
+                service_name: this.serviceName,
+                source_type: 'application',
+                user_id: user?.id ?? '',
+                session_id: input.sessionId ?? telemetryContext?.resolveSessionId() ?? '',
+                trace_id: input.traceId ?? traceContext?.traceId ?? '',
+                span_id: input.spanId ?? traceContext?.spanId ?? '',
+                error_type: error.type,
+                error_message: error.message,
+                error_stack: error.stack,
+                error_code: error.code,
+                error_handled: error.handled,
+                event_attributes: eventAttributes,
+            },
+        })
     }
 
     private resolveTraceContext(input: CaptureHttpExchangeInput): TraceContext {

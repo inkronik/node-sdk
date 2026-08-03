@@ -1,5 +1,20 @@
 import type { IngestTelemetryResponse, IngestTelemetrySignal } from './protocol/types.js'
 
+export type EventLevel = 'info' | 'warning' | 'error'
+
+export interface EventUserContext {
+    readonly id: string
+    readonly attributes?: Record<string, string>
+}
+
+export interface CapturedError {
+    readonly type: string
+    readonly message: string
+    readonly stack: string
+    readonly code: string
+    readonly handled: boolean
+}
+
 export interface InkronikClientOptions {
     readonly collectorUrl: string
     readonly ingestApiKey: string
@@ -88,6 +103,7 @@ export interface CaptureRequestResponseOptions {
     readonly maxBodyBytes?: number
     readonly shouldCapture?: (context: HttpCaptureContext) => boolean
     readonly getUserId?: (context: HttpCaptureContext) => string
+    readonly getUserContext?: (request: HttpLikeRequest) => EventUserContext | undefined
     readonly getSessionId?: (context: HttpCaptureContext) => string
     readonly getRoute?: (context: HttpCaptureContext) => string
     readonly getRequestKind?: (context: HttpCaptureContext) => HttpRequestKind
@@ -141,6 +157,11 @@ export interface TraceContext {
     readonly parentSpanId: string
 }
 
+export interface TelemetryContext extends TraceContext {
+    readonly resolveUser: () => EventUserContext | undefined
+    readonly resolveSessionId: () => string
+}
+
 export interface LogInput {
     readonly severityText: string
     readonly severityNumber: number
@@ -158,12 +179,40 @@ export interface LogInput {
 export interface EventInput {
     readonly name: string
     readonly category: string
+    readonly level?: EventLevel
+    readonly message?: string
     readonly timestamp?: string
+    readonly user?: EventUserContext
     readonly userId?: string
     readonly sessionId?: string
     readonly traceId?: string
     readonly spanId?: string
     readonly attributes?: Record<string, string>
+}
+
+export interface CaptureErrorOptions {
+    readonly name: string
+    readonly category?: string
+    readonly message?: string
+    readonly timestamp?: string
+    readonly user?: EventUserContext
+    readonly userId?: string
+    readonly sessionId?: string
+    readonly traceId?: string
+    readonly spanId?: string
+    readonly attributes?: Record<string, string>
+}
+
+export interface CaptureEventSignalInput {
+    readonly event: EventInput
+    readonly error: CapturedError
+}
+
+export interface BuildRequestTelemetryContextInput {
+    readonly options: ResolvedCaptureRequestResponseOptions
+    readonly request: HttpLikeRequest
+    readonly response: HttpLikeResponse
+    readonly traceContext: TraceContext
 }
 
 export interface GaugeInput {

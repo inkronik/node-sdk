@@ -77,6 +77,11 @@ const getSignals = (request: SentRequest) => {
                     readonly http_route?: string
                     readonly metric_name?: string
                     readonly metric_attributes?: Record<string, string>
+                    readonly event_attributes?: Record<string, string>
+                    readonly event_level?: string
+                    readonly user_id?: string
+                    readonly trace_id?: string
+                    readonly span_id?: string
                     readonly value?: number
                     readonly request_body?: string
                     readonly response_headers?: Record<string, string>
@@ -134,6 +139,42 @@ describe('createInkronikExpressMiddleware', () => {
         const signals = getSignals(requests[0] as SentRequest)
 
         expect(signals[0]?.payload.span_attributes).toMatchObject({ 'user.id': 'user_123' })
+    })
+
+    test('inherits lazily resolved request user and trace context for events', async () => {
+        const { client, requests } = createTestClient()
+        const request = createRequest()
+        const { response } = createResponse()
+        const middleware = createInkronikExpressMiddleware({
+            client,
+            options: {
+                getUserContext: currentRequest => {
+                    const user = currentRequest.user as { readonly id?: string; readonly role?: string } | undefined
+
+                    return user?.id === undefined ? undefined : { id: user.id, attributes: { role: user.role ?? '' } }
+                },
+            },
+        })
+
+        middleware(request, response, () => {
+            // Express authentication middleware populates request.user after tracing middleware has started.
+            Reflect.set(request, 'user', { id: 'user_456', role: 'admin' })
+            client.event({ name: 'admin_action', category: 'audit', level: 'warning' })
+        })
+        response.end?.()
+        await client.shutdown()
+
+        const signals = getSignals(requests[0] as SentRequest)
+        const event = signals.find(signal => signal.signal_type === 'event')
+        const span = signals.find(signal => signal.signal_type === 'span')
+
+        expect(event?.payload).toMatchObject({
+            event_level: 'warning',
+            user_id: 'user_456',
+            event_attributes: { 'user.role': 'admin' },
+        })
+        expect(event?.payload.trace_id).toBe(span?.payload.trace_id)
+        expect(event?.payload.span_id).toMatch(/^[0-9a-f]{16}$/u)
     })
 
     test('uses current account uuid when Fastify request stores authenticated account context', async () => {

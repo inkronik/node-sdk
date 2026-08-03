@@ -97,6 +97,52 @@ describe('InkronikClient', () => {
         expect(body.signals[0]?.signal_type).toBe('log')
     })
 
+    test('captures structured handled errors with message, user context, and stack', async () => {
+        const { fetchImpl, requests } = createTelemetryFetch()
+        const client = new InkronikClient({
+            collectorUrl: 'http://collector:4000',
+            ingestApiKey: 'ik_live_prefix_secret',
+            serviceName: 'orders-api',
+            fetchImpl,
+            flushIntervalMs: 60_000,
+        })
+        const error = Object.assign(new Error('Payment provider timed out'), { code: 'ETIMEDOUT', responseBody: 'must-not-be-captured' })
+
+        client.captureError(error, {
+            name: 'payment_capture_failed',
+            message: 'Payment remained pending and a retry was scheduled',
+            user: { id: 'user_42', attributes: { role: 'buyer' } },
+            attributes: { provider: 'stripe' },
+        })
+        await client.shutdown()
+
+        const request = requests[0] as { readonly init?: RequestInit }
+
+        if (typeof request.init?.body !== 'string') {
+            throw new Error('Expected fetch body')
+        }
+
+        const body = JSON.parse(request.init.body) as {
+            readonly signals: Array<{ readonly payload: Readonly<Record<string, unknown>> }>
+        }
+        const payload = body.signals[0]?.payload
+
+        expect(payload).toMatchObject({
+            event_name: 'payment_capture_failed',
+            event_category: 'error',
+            event_level: 'error',
+            message: 'Payment remained pending and a retry was scheduled',
+            user_id: 'user_42',
+            error_type: 'Error',
+            error_message: 'Payment provider timed out',
+            error_code: 'ETIMEDOUT',
+            error_handled: true,
+            event_attributes: { provider: 'stripe', 'user.role': 'buyer' },
+        })
+        expect(String(payload.error_stack)).toContain('Error: Payment provider timed out')
+        expect(JSON.stringify(payload)).not.toContain('must-not-be-captured')
+    })
+
     test('captures http span, request sample, and route metrics with trace propagation', async () => {
         const { fetchImpl, requests } = createTelemetryFetch({ accepted: 5 })
 
