@@ -95,12 +95,19 @@ interface EventPayload {
     readonly event_id: string
     readonly event_name: string
     readonly event_category: string
+    readonly event_level: 'info' | 'warning' | 'error'
+    readonly message: string
     readonly service_name: string
     readonly source_type: string
     readonly user_id: string
     readonly session_id: string
     readonly trace_id: string
     readonly span_id: string
+    readonly error_type: string
+    readonly error_message: string
+    readonly error_stack: string
+    readonly error_code: string
+    readonly error_handled: boolean
     readonly event_attributes: TelemetryAttributes
 }
 

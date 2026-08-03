@@ -5,6 +5,7 @@ import type { CaptureRequestResponseOptions, HttpLikeRequest, HttpLikeResponse, 
 import {
     acceptsEventStream,
     buildCaptureContext,
+    buildRequestTelemetryContext,
     getHttpContentLength,
     getHttpBodySample,
     getRequestBody,
@@ -51,11 +52,12 @@ export class InkronikNestInterceptor implements NestInterceptor {
         const response = http.getResponse<HttpLikeResponse>()
         const startedAt = performance.now()
         const traceContext = getRequestTraceContext(request)
+        const telemetryContext = buildRequestTelemetryContext({ options: this.captureOptions, request, response, traceContext })
         const setHeader = (response as { setHeader?: (name: string, value: string) => void }).setHeader
         setHeader?.call(response, 'traceparent', toTraceparent(traceContext))
 
         return new Observable(subscriber =>
-            runWithTraceContext(traceContext, () =>
+            runWithTraceContext(telemetryContext, () =>
                 next
                     .handle()
                     .pipe(
@@ -98,8 +100,8 @@ export class InkronikNestInterceptor implements NestInterceptor {
                                 metrics: this.captureOptions.metrics,
                                 traceId: traceContext.traceId,
                                 parentSpanId: traceContext.parentSpanId,
-                                userId: this.captureOptions.getUserId(captureContext),
-                                sessionId: this.captureOptions.getSessionId(captureContext),
+                                userId: telemetryContext.resolveUser()?.id,
+                                sessionId: telemetryContext.resolveSessionId(),
                                 attributes: this.captureOptions.getAttributes(captureContext),
                             })
                         }),

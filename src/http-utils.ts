@@ -1,4 +1,5 @@
 import type {
+    BuildRequestTelemetryContextInput,
     CaptureRequestResponseOptions,
     CapturedResponseBodyMode,
     HttpBodySample,
@@ -439,6 +440,22 @@ export const buildCaptureContext = ({
     }
 }
 
+export const buildRequestTelemetryContext = ({ options, request, response, traceContext }: BuildRequestTelemetryContextInput) => ({
+    ...traceContext,
+    resolveUser: () => {
+        const explicitUser = options.getUserContext(request)
+
+        if (explicitUser !== undefined) {
+            return explicitUser
+        }
+
+        const userId = options.getUserId(buildCaptureContext({ request, response }))
+
+        return userId === '' ? undefined : { id: userId }
+    },
+    resolveSessionId: () => options.getSessionId(buildCaptureContext({ request, response })),
+})
+
 export const resolveCaptureOptions = (options: CaptureRequestResponseOptions = {}): ResolvedCaptureRequestResponseOptions => ({
     enabled: options.enabled ?? true,
     exclude: options.exclude ?? (() => false),
@@ -448,6 +465,7 @@ export const resolveCaptureOptions = (options: CaptureRequestResponseOptions = {
     maxBodyBytes: options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES,
     shouldCapture: options.shouldCapture ?? (() => true),
     getUserId: options.getUserId ?? (context => context.userId),
+    getUserContext: options.getUserContext ?? (() => undefined),
     getSessionId: options.getSessionId ?? (() => ''),
     getRoute: options.getRoute ?? (context => context.route),
     getRequestKind: options.getRequestKind ?? inferHttpRequestKind,

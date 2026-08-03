@@ -1,13 +1,19 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import type { TraceContext } from './types.js'
+import type { TelemetryContext, TraceContext } from './types.js'
 import { createSpanId, createTraceId } from './utils.js'
 
 const TRACEPARENT_PATTERN = /^00-([0-9a-f]{32})-([0-9a-f]{16})-[0-9a-f]{2}$/u
-const traceStorage = new AsyncLocalStorage<TraceContext>()
+const traceStorage = new AsyncLocalStorage<TraceContext | TelemetryContext>()
 
 export const getCurrentTraceContext = (): TraceContext | undefined => traceStorage.getStore()
 
-export const runWithTraceContext = <T>(context: TraceContext, callback: () => T): T => traceStorage.run(context, callback)
+export const getCurrentTelemetryContext = (): TelemetryContext | undefined => {
+    const context = traceStorage.getStore()
+
+    return context !== undefined && 'resolveUser' in context ? context : undefined
+}
+
+export const runWithTraceContext = <T>(context: TraceContext | TelemetryContext, callback: () => T): T => traceStorage.run(context, callback)
 
 export const parseTraceparent = (value: string | undefined): TraceContext | undefined => {
     if (value === undefined) {

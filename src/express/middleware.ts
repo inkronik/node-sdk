@@ -2,6 +2,7 @@ import type { InkronikClient } from '../client.js'
 import type { CaptureRequestResponseOptions, HttpLikeNext, HttpLikeRequest, HttpLikeResponse } from '../types.js'
 import {
     buildCaptureContext,
+    buildRequestTelemetryContext,
     getBodyChunkSizeBytes,
     getHttpContentLength,
     getRequestBody,
@@ -47,6 +48,7 @@ export const createInkronikExpressMiddleware = ({
 
         const startedAt = performance.now()
         const traceContext = getRequestTraceContext(request)
+        const telemetryContext = buildRequestTelemetryContext({ options: captureOptions, request, response, traceContext })
         const responseBody = { value: '' }
         const responseSizeBytes = { value: 0 }
         const originalWrite = response.write
@@ -109,8 +111,8 @@ export const createInkronikExpressMiddleware = ({
                         metrics: captureOptions.metrics,
                         traceId: traceContext.traceId,
                         parentSpanId: traceContext.parentSpanId,
-                        userId: captureOptions.getUserId(context),
-                        sessionId: captureOptions.getSessionId(context),
+                        userId: telemetryContext.resolveUser()?.id,
+                        sessionId: telemetryContext.resolveSessionId(),
                         attributes: captureOptions.getAttributes(context),
                     })
                 }
@@ -121,6 +123,6 @@ export const createInkronikExpressMiddleware = ({
 
         const setHeader = (response as { setHeader?: (name: string, value: string) => void }).setHeader
         setHeader?.call(response, 'traceparent', toTraceparent(traceContext))
-        runWithTraceContext(traceContext, next)
+        runWithTraceContext(telemetryContext, next)
     }
 }
