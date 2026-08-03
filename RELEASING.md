@@ -30,8 +30,11 @@ published as `-rc.N` under the npm `rc` dist-tag.
 
 ## npm publication
 
-The temporary `NPM_TOKEN` GitHub secret is used automatically when present. Once Trusted Publishing is configured, remove the secret and the
-workflow will publish through OIDC instead.
+The release workflow publishes exclusively through npm Trusted Publishing and GitHub Actions OIDC. It does not read an `NPM_TOKEN` or export
+`NODE_AUTH_TOKEN`. The job runs on a GitHub-hosted runner with `id-token: write`, Node 24, npm 11.18, and the protected `npm` environment.
+
+Remove any obsolete `NPM_TOKEN` repository or environment secret and revoke the corresponding npm automation token. If private npm dependencies
+are added later, use a separate read-only token only on the dependency-install step; the publish step must remain tokenless.
 
 The workflow requires permission to push its release commit and tag to the selected branch. If a branch ruleset blocks GitHub Actions, allow
 this workflow to bypass the rule or use a release-specific GitHub App token.
@@ -57,5 +60,5 @@ npx npm@11.18.0 trust github @inkronik/node-sdk \
   --allow-publish
 ```
 
-After verifying the first OIDC-backed release, delete the `NPM_TOKEN` GitHub secret and revoke the token on npm. The workflow detects the
-missing secret and publishes through Trusted Publishing instead. npm generates provenance automatically for OIDC publications.
+npm generates provenance automatically for OIDC publications. The package repository URL, workflow filename, and `npm` environment must continue
+to match the trusted-publisher configuration exactly.
