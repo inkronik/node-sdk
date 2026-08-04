@@ -208,6 +208,8 @@ Pass `{ bufferLogs: true }` to `NestFactory.create`, then call `app.useLogger(lo
 
 Request bodies and successful response samples are captured by default with a 16 KiB body limit. Response samples keep object fields, truncate strings to 10 characters, keep numbers/booleans, and keep only the first array item plus `...` when more items exist. Successful raw response bodies require `captureResponseBody: true`; error response bodies are captured automatically. The Collector applies server-side redaction before persisting request/response capture signals.
 
+The NestJS interceptor also captures the Observable error path automatically. `HttpException` responses such as 400 validation errors retain their HTTP status and public response body. Other thrown values are recorded as 500 responses. Every response with status 400 or higher is marked as a failed request; thrown errors additionally attach their bounded type, message, code, and stack trace to the server span. The original exception continues through NestJS unchanged, so existing exception filters keep working without application-level Inkronik code.
+
 Framework adapters resolve the trace user id from `request.user` or `request.currentAccount` by default, preferring `uuid`, then `id`. Pass `getUserId` when your authentication context uses a different shape.
 
 Exclude health checks, metrics endpoints, or other requests before tracing:

@@ -149,6 +149,8 @@ export interface CaptureHttpExchangeInput {
     readonly userId?: string
     readonly sessionId?: string
     readonly attributes?: Record<string, string>
+    readonly error?: unknown
+    readonly errorHandled?: boolean
 }
 
 export interface TraceContext {

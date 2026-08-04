@@ -19,7 +19,59 @@ import {
     stringifyHttpBodySample,
 } from '../http-utils.js'
 import { runWithTraceContext, toTraceparent } from '../trace-context.js'
-import { safeJsonStringify, truncateUtf8, utf8ByteLength } from '../utils.js'
+import { normalizeCapturedError, safeJsonStringify, truncateUtf8, utf8ByteLength } from '../utils.js'
+import type { CaptureNestHttpExchangeInput } from './types.js'
+
+const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === 'object' && value !== null
+
+const readExceptionMember = ({ error, name }: { readonly error: unknown; readonly name: string }): unknown => {
+    if (!isRecord(error)) {
+        return undefined
+    }
+
+    try {
+        const member = Reflect.get(error, name) as unknown
+
+        return typeof member === 'function' ? Reflect.apply(member, error, []) : member
+    } catch {
+        return undefined
+    }
+}
+
+const toErrorStatusCode = (value: unknown): number | undefined =>
+    typeof value === 'number' && Number.isInteger(value) && value >= 400 && value <= 599 ? value : undefined
+
+const resolveExceptionStatusCode = ({ error, response }: { readonly error: unknown; readonly response: HttpLikeResponse }): number => {
+    const exceptionResponse = readExceptionMember({ error, name: 'response' })
+    const responseStatusCode = isRecord(exceptionResponse) ? exceptionResponse.statusCode : undefined
+    const responseStatus = isRecord(exceptionResponse) ? exceptionResponse.status : undefined
+    const candidates = [
+        readExceptionMember({ error, name: 'getStatus' }),
+        readExceptionMember({ error, name: 'statusCode' }),
+        readExceptionMember({ error, name: 'status' }),
+        responseStatusCode,
+        responseStatus,
+        response.statusCode,
+    ]
+
+    return candidates.map(toErrorStatusCode).find(statusCode => statusCode !== undefined) ?? 500
+}
+
+const resolveExceptionResponse = ({ error, statusCode }: { readonly error: unknown; readonly statusCode: number }): unknown => {
+    const publicResponse = readExceptionMember({ error, name: 'getResponse' }) ?? readExceptionMember({ error, name: 'response' })
+
+    if (publicResponse !== undefined) {
+        return publicResponse
+    }
+
+    const capturedError = normalizeCapturedError(error)
+
+    return {
+        statusCode,
+        message: capturedError.message,
+        error: capturedError.type,
+    }
+}
 
 @Injectable()
 export class InkronikNestInterceptor implements NestInterceptor {
@@ -61,53 +113,76 @@ export class InkronikNestInterceptor implements NestInterceptor {
                 next
                     .handle()
                     .pipe(
-                        tap(data => {
-                            const captureContext = buildCaptureContext({ request, response })
-
-                            if (!this.captureOptions.shouldCapture(captureContext)) {
-                                return
-                            }
-
-                            const route = this.captureOptions.getRoute(captureContext)
-                            const serializedResponseBody = safeJsonStringify(data)
-                            const responseBodyType = getResponseBodyType(data)
-                            const shouldCaptureRawResponse = this.captureOptions.captureResponseBody || isErrorStatusCode(captureContext.statusCode)
-                            const responseBodySample = getHttpBodySample({ redaction: this.captureOptions.redaction, value: data })
-                            const bodyMode = shouldCaptureRawResponse ? 'raw' : 'sample'
-                            const responseBody = truncateUtf8({
-                                maxBytes: this.captureOptions.maxBodyBytes,
-                                value: shouldCaptureRawResponse ? serializedResponseBody : stringifyHttpBodySample(responseBodySample),
-                            })
-
-                            this.client.captureHttpExchange({
-                                ...captureContext,
-                                route,
-                                responseHeaders: resolveCapturedResponseHeaders({
-                                    bodyMode,
-                                    headers: captureContext.responseHeaders,
-                                    responseBodyType,
-                                    shouldCaptureRawResponse,
+                        tap({
+                            next: responseBody =>
+                                this.captureHttpExchange({
+                                    outcome: { kind: 'success', responseBody },
+                                    request,
+                                    response,
+                                    startedAt,
+                                    telemetryContext,
+                                    traceContext,
                                 }),
-                                requestBody: this.captureOptions.captureRequestBody
-                                    ? getRequestBody({ maxBodyBytes: this.captureOptions.maxBodyBytes, request })
-                                    : '',
-                                requestSizeBytes: getHttpContentLength(captureContext.requestHeaders) ?? getRequestBodySizeBytes(request),
-                                responseBody,
-                                responseSizeBytes: getHttpContentLength(captureContext.responseHeaders) ?? utf8ByteLength(serializedResponseBody),
-                                durationMs: performance.now() - startedAt,
-                                requestKind: this.captureOptions.getRequestKind(captureContext),
-                                captureRequestResponse: this.captureOptions.captureRequestResponse,
-                                metrics: this.captureOptions.metrics,
-                                traceId: traceContext.traceId,
-                                parentSpanId: traceContext.parentSpanId,
-                                userId: telemetryContext.resolveUser()?.id,
-                                sessionId: telemetryContext.resolveSessionId(),
-                                attributes: this.captureOptions.getAttributes(captureContext),
-                            })
+                            error: error =>
+                                this.captureHttpExchange({
+                                    outcome: { error, kind: 'error' },
+                                    request,
+                                    response,
+                                    startedAt,
+                                    telemetryContext,
+                                    traceContext,
+                                }),
                         }),
                     )
                     .subscribe(subscriber),
             ),
         )
+    }
+
+    private captureHttpExchange({ outcome, request, response, startedAt, telemetryContext, traceContext }: CaptureNestHttpExchangeInput): void {
+        const isException = outcome.kind === 'error'
+        const statusCode = isException ? resolveExceptionStatusCode({ error: outcome.error, response }) : (response.statusCode ?? 0)
+        const responseValue = isException ? resolveExceptionResponse({ error: outcome.error, statusCode }) : outcome.responseBody
+        const captureContext = { ...buildCaptureContext({ request, response }), statusCode }
+
+        if (!this.captureOptions.shouldCapture(captureContext)) {
+            return
+        }
+
+        const route = this.captureOptions.getRoute(captureContext)
+        const serializedResponseBody = safeJsonStringify(responseValue)
+        const responseBodyType = getResponseBodyType(responseValue)
+        const shouldCaptureRawResponse = this.captureOptions.captureResponseBody || isErrorStatusCode(captureContext.statusCode)
+        const responseBodySample = getHttpBodySample({ redaction: this.captureOptions.redaction, value: responseValue })
+        const bodyMode = shouldCaptureRawResponse ? 'raw' : 'sample'
+        const responseBody = truncateUtf8({
+            maxBytes: this.captureOptions.maxBodyBytes,
+            value: shouldCaptureRawResponse ? serializedResponseBody : stringifyHttpBodySample(responseBodySample),
+        })
+
+        this.client.captureHttpExchange({
+            ...captureContext,
+            route,
+            responseHeaders: resolveCapturedResponseHeaders({
+                bodyMode,
+                headers: captureContext.responseHeaders,
+                responseBodyType,
+                shouldCaptureRawResponse,
+            }),
+            requestBody: this.captureOptions.captureRequestBody ? getRequestBody({ maxBodyBytes: this.captureOptions.maxBodyBytes, request }) : '',
+            requestSizeBytes: getHttpContentLength(captureContext.requestHeaders) ?? getRequestBodySizeBytes(request),
+            responseBody,
+            responseSizeBytes: getHttpContentLength(captureContext.responseHeaders) ?? utf8ByteLength(serializedResponseBody),
+            durationMs: performance.now() - startedAt,
+            requestKind: this.captureOptions.getRequestKind(captureContext),
+            captureRequestResponse: this.captureOptions.captureRequestResponse,
+            metrics: this.captureOptions.metrics,
+            traceId: traceContext.traceId,
+            parentSpanId: traceContext.parentSpanId,
+            userId: telemetryContext.resolveUser()?.id,
+            sessionId: telemetryContext.resolveSessionId(),
+            attributes: this.captureOptions.getAttributes(captureContext),
+            ...(isException ? { error: outcome.error } : {}),
+        })
     }
 }

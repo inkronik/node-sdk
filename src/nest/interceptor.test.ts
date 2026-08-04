@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { lastValueFrom, Observable, of } from 'rxjs'
-import { type CallHandler, type ExecutionContext } from '@nestjs/common'
+import { lastValueFrom, Observable, of, throwError } from 'rxjs'
+import { BadRequestException, type CallHandler, type ExecutionContext } from '@nestjs/common'
 import { InkronikClient } from '../client.js'
 import type { HttpLikeRequest, HttpLikeResponse } from '../types.js'
 import { InkronikNestInterceptor } from './interceptor.js'
@@ -91,6 +91,11 @@ const getSignals = (request: SentRequest) => {
                     readonly http_route?: string
                     readonly metric_name?: string
                     readonly span_id?: string
+                    readonly span_attributes?: Record<string, string>
+                    readonly status_code?: string
+                    readonly status_message?: string
+                    readonly has_error?: boolean
+                    readonly http_status_code?: number
                     readonly trace_id?: string
                     readonly value?: number
                     readonly request_body?: string
@@ -187,8 +192,79 @@ describe('InkronikNestInterceptor', () => {
 
         const signals = getSignals(requests[0] as SentRequest)
         const capture = signals.find(signal => signal.signal_type === 'request_response_capture')
+        const span = signals.find(signal => signal.signal_type === 'span')
 
         expect(capture?.payload.response_body).toBe('{"ok":false}')
+        expect(span?.payload).toMatchObject({ has_error: true, http_status_code: 500, status_code: 'error' })
+    })
+
+    test('captures thrown NestJS 400 exceptions without swallowing them', async () => {
+        const { client, requests } = createTestClient()
+        const request = { ...createRequest(), user: { uuid: 'user-400' } }
+        const { response } = createResponse()
+        const interceptor = new InkronikNestInterceptor(client)
+        const exception = new BadRequestException('Invalid order payload')
+        const next: CallHandler = { handle: () => throwError(() => exception) }
+
+        const receivedError = await lastValueFrom(interceptor.intercept(createExecutionContext({ request, response }), next)).catch(
+            (error: unknown): unknown => error,
+        )
+        await client.shutdown()
+
+        const signals = getSignals(requests[0] as SentRequest)
+        const span = signals.find(signal => signal.signal_type === 'span')
+        const capture = signals.find(signal => signal.signal_type === 'request_response_capture')
+
+        expect(receivedError).toBe(exception)
+        expect(span?.payload).toMatchObject({
+            has_error: true,
+            http_status_code: 400,
+            status_code: 'error',
+            status_message: 'Invalid order payload',
+            span_attributes: {
+                'error.type': 'BadRequestException',
+                'error.message': 'Invalid order payload',
+                'error.handled': 'false',
+                'http.status_code': '400',
+                'user.id': 'user-400',
+            },
+        })
+        expect(span?.payload.span_attributes?.['error.stack']).toContain('BadRequestException: Invalid order payload')
+        expect(capture?.payload.response_body).toBe('{"message":"Invalid order payload","error":"Bad Request","statusCode":400}')
+    })
+
+    test('captures unhandled errors as 500 responses with message and stack', async () => {
+        const { client, requests } = createTestClient()
+        const request = createRequest()
+        const { response } = createResponse()
+        const interceptor = new InkronikNestInterceptor(client)
+        const exception = new Error('Database connection failed')
+        const next: CallHandler = { handle: () => throwError(() => exception) }
+
+        const receivedError = await lastValueFrom(interceptor.intercept(createExecutionContext({ request, response }), next)).catch(
+            (error: unknown): unknown => error,
+        )
+        await client.shutdown()
+
+        const signals = getSignals(requests[0] as SentRequest)
+        const span = signals.find(signal => signal.signal_type === 'span')
+        const capture = signals.find(signal => signal.signal_type === 'request_response_capture')
+
+        expect(receivedError).toBe(exception)
+        expect(span?.payload).toMatchObject({
+            has_error: true,
+            http_status_code: 500,
+            status_code: 'error',
+            status_message: 'Database connection failed',
+            span_attributes: {
+                'error.type': 'Error',
+                'error.message': 'Database connection failed',
+                'error.handled': 'false',
+                'http.status_code': '500',
+            },
+        })
+        expect(span?.payload.span_attributes?.['error.stack']).toContain('Error: Database connection failed')
+        expect(capture?.payload.response_body).toBe('{"statusCode":500,"message":"Database connection failed","error":"Error"}')
     })
 
     test('respects explicit request response capture opt-out', async () => {
