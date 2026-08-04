@@ -1,9 +1,9 @@
-import { AsyncLocalStorage } from 'node:async_hooks'
+import { getInkronikRuntimeState } from './runtime-state.js'
 import type { TelemetryContext, TraceContext } from './types.js'
 import { createSpanId, createTraceId } from './utils.js'
 
 const TRACEPARENT_PATTERN = /^00-([0-9a-f]{32})-([0-9a-f]{16})-[0-9a-f]{2}$/u
-const traceStorage = new AsyncLocalStorage<TraceContext | TelemetryContext>()
+const traceStorage = getInkronikRuntimeState().traceStorage
 
 export const getCurrentTraceContext = (): TraceContext | undefined => traceStorage.getStore()
 

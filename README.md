@@ -10,6 +10,9 @@ bun add @inkronik/node-sdk
 
 The package requires Node.js 20 or newer. Bun is supported for preload-based automatic PostgreSQL instrumentation.
 
+Both ESM `import` and CommonJS `require()` are supported. Applications may load the core, preload, Express, and NestJS entrypoints
+independently; they share one process-level client and trace context so child spans remain correlated across package entrypoints.
+
 ## Configuration
 
 Create an ingest API key in your Inkronik workspace and configure the SDK through environment variables:

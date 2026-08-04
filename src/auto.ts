@@ -2,23 +2,11 @@ import { createInkronikClientFromEnv, setDefaultInkronikClient } from './env.js'
 import type { InkronikClient } from './client.js'
 import { startPgAutoInstrumentation } from './pg-auto.js'
 import { startPostgresAutoInstrumentation } from './postgres-auto.js'
+import { getInkronikRuntimeState } from './runtime-state.js'
 import type { InitInkronikOptions } from './types.js'
 
 const BULLMQ_MODULE_NAME = 'bullmq'
-
-const autoState: {
-    client: InkronikClient | null
-    restoreBullMQ: (() => void) | null
-    restoreFetch: (() => void) | null
-    restorePg: (() => void) | null
-    restorePostgres: (() => void) | null
-} = {
-    client: null,
-    restoreBullMQ: null,
-    restoreFetch: null,
-    restorePg: null,
-    restorePostgres: null,
-}
+const autoState = getInkronikRuntimeState().autoInstrumentation
 
 const resolveFetchOptions = (options: InitInkronikOptions): Parameters<InkronikClient['instrumentGlobalFetch']>[0] | false => {
     const fetchOptions = options.instrumentations?.fetch
