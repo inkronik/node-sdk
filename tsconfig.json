@@ -11,5 +11,6 @@
     "target": "ES2022",
     "types": ["bun"]
   },
-  "include": ["scripts", "src"]
+  "include": ["scripts", "src"],
+  "exclude": ["scripts/fixtures"]
 }

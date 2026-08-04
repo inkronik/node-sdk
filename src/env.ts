@@ -1,10 +1,9 @@
 import { InkronikClient } from './client.js'
+import { getInkronikRuntimeState } from './runtime-state.js'
 import type { CreateInkronikClientFromEnvOptions, InkronikClientOptions } from './types.js'
 
 const requiredEnvKeys = ['INKRONIK_COLLECTOR_URL', 'INKRONIK_INGEST_API_KEY'] as const
-const defaultClientState: { client: InkronikClient | null } = {
-    client: null,
-}
+const runtimeState = getInkronikRuntimeState()
 
 type RequiredEnvKey = (typeof requiredEnvKeys)[number]
 type EnvKey = RequiredEnvKey | 'INKRONIK_APPLICATION_ID' | 'INKRONIK_SERVICE_VERSION' | 'INKRONIK_POD_NAME' | 'HOSTNAME' | 'KUBERNETES_SERVICE_HOST'
@@ -98,9 +97,9 @@ export const createInkronikClientFromEnv = (options: CreateInkronikClientFromEnv
 export const setDefaultInkronikClient = (client: InkronikClient): InkronikClient => {
     // The default client is process-level SDK state, mirroring auto-instrumentation agents.
     // eslint-disable-next-line functional/immutable-data
-    defaultClientState.client = client
+    runtimeState.defaultClient = client
 
     return client
 }
 
-export const getDefaultInkronikClient = (): InkronikClient => defaultClientState.client ?? createInkronikClientFromEnv()
+export const getDefaultInkronikClient = (): InkronikClient => runtimeState.defaultClient ?? createInkronikClientFromEnv()
