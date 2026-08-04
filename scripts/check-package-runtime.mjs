@@ -52,6 +52,7 @@ const client = auto.initInkronik({
 
 try {
     assert.equal(root.getDefaultInkronikClient(), client, `${mode} entrypoints did not share the default client`)
+    assert.equal(typeof nest.createInkronikNestMiddleware, 'function', `${mode} did not expose the early Nest HTTP middleware`)
 
     const interceptor = new nest.InkronikNestInterceptor(client, {
         autoInstrumentFetch: false,

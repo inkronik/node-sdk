@@ -13,6 +13,7 @@ import {
     getRequestTraceContext,
     getResponseBodyType,
     isErrorStatusCode,
+    markHttpExchangeCaptured,
     resolveCapturedResponseHeaders,
     resolveAutoInstrumentFetchOptions,
     resolveCaptureOptions,
@@ -184,5 +185,6 @@ export class InkronikNestInterceptor implements NestInterceptor {
             attributes: this.captureOptions.getAttributes(captureContext),
             ...(isException ? { error: outcome.error } : {}),
         })
+        markHttpExchangeCaptured(request)
     }
 }

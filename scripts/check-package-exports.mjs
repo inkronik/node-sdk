@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
@@ -20,6 +21,15 @@ runtimeExports.forEach(({ expectedExport, name }) => {
 })
 
 assert.match(require.resolve('@inkronik/node-sdk/register'), /\.cjs$/u, 'register did not resolve to CommonJS')
+
+const commonJsAutoPath = require.resolve('@inkronik/node-sdk/auto')
+const commonJsAutoSource = await readFile(commonJsAutoPath, 'utf8')
+
+assert.doesNotMatch(
+    commonJsAutoSource,
+    /createRequire\(["']file:\/\//u,
+    'CommonJS auto instrumentation contains a build-machine module resolution path',
+)
 
 await Promise.all(
     runtimeExports.map(async ({ expectedExport, name }) => {

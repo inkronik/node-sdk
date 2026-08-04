@@ -10,7 +10,9 @@ import {
     getRequestTraceContext,
     getSerializedHttpBodySample,
     getSerializedResponseBodyType,
+    hasCapturedHttpExchange,
     isErrorStatusCode,
+    markHttpExchangeCaptured,
     resolveAutoInstrumentFetchOptions,
     resolveCapturedResponseHeaders,
     resolveCaptureOptions,
@@ -85,7 +87,7 @@ export const createInkronikExpressMiddleware = ({
                 const result = originalEnd.call(response, chunk, encoding, callback)
                 const context = buildCaptureContext({ request, response })
 
-                if (captureOptions.shouldCapture(context)) {
+                if (!hasCapturedHttpExchange(request) && captureOptions.shouldCapture(context)) {
                     const route = captureOptions.getRoute(context)
                     const responseBodyType = getSerializedResponseBodyType(responseBody.value)
                     const shouldCaptureRawResponse = captureOptions.captureResponseBody || isErrorStatusCode(context.statusCode)
@@ -115,6 +117,7 @@ export const createInkronikExpressMiddleware = ({
                         sessionId: telemetryContext.resolveSessionId(),
                         attributes: captureOptions.getAttributes(context),
                     })
+                    markHttpExchangeCaptured(request)
                 }
 
                 return result

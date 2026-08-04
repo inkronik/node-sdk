@@ -124,7 +124,7 @@ app.use(createInkronikExpressMiddleware({ client: inkronik }))
 ```ts
 import { APP_INTERCEPTOR } from '@nestjs/core'
 import { createInkronikClientFromEnv } from '@inkronik/node-sdk'
-import { InkronikNestInterceptor, InkronikNestLogger } from '@inkronik/node-sdk/nest'
+import { createInkronikNestMiddleware, InkronikNestInterceptor, InkronikNestLogger } from '@inkronik/node-sdk/nest'
 
 const inkronik = createInkronikClientFromEnv()
 const logger = new InkronikNestLogger({ client: inkronik })
@@ -134,6 +134,18 @@ export const inkronikInterceptorProvider = {
     useValue: new InkronikNestInterceptor(inkronik),
 }
 ```
+
+Register the early HTTP middleware immediately after creating the Nest application, while keeping the interceptor provider above:
+
+```ts
+const app = await NestFactory.create(AppModule, { bufferLogs: true })
+
+app.use(createInkronikNestMiddleware({ client: inkronik }))
+```
+
+The middleware covers responses produced before interceptors run, including guard failures, unmatched routes, and request parser errors.
+The interceptor keeps framework exception details and stack traces for controller and pipe failures. Both adapters share request state, so a
+request produces one server span rather than duplicate middleware and interceptor spans.
 
 Pass `{ autoInstrumentFetch: false }` to the Express middleware or NestJS interceptor options when another tracer already patches
 global `fetch`.
