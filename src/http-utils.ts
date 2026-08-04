@@ -6,6 +6,7 @@ import type {
     HttpCaptureContext,
     HttpLikeRequest,
     HttpLikeResponse,
+    HttpRequestInstrumentationState,
     HttpRequestKind,
     InstrumentedFetchOptions,
     ResolvedCaptureRequestResponseOptions,
@@ -23,6 +24,7 @@ const DEFAULT_REDACTED_VALUE = '[REDACTED]'
 const TEXT_EVENT_STREAM = 'text/event-stream'
 const RESPONSE_BODY_MODE_HEADER = 'inkronik-response-body-mode'
 const RESPONSE_BODY_TYPE_HEADER = 'inkronik-response-body-type'
+const INKRONIK_HTTP_REQUEST_STATE = Symbol.for('@inkronik/node-sdk.http-request-state.v1')
 const UUID_ROUTE_SEGMENT_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/u
 const NUMERIC_ROUTE_SEGMENT_PATTERN = /^[0-9]+$/u
 const defaultSensitiveFieldNames: ReadonlyArray<string> = [
@@ -145,8 +147,52 @@ export const getRequestRoute = ({ request, url }: { readonly request: HttpLikeRe
 
 export const getRequestHeaders = (request: HttpLikeRequest): Record<string, string> => toStringMap(request.headers)
 
-export const getRequestTraceContext = (request: HttpLikeRequest) =>
-    parseTraceparent(getRequestHeaders(request).traceparent) ?? createRootTraceContext()
+const getHttpRequestInstrumentationState = (request: HttpLikeRequest): HttpRequestInstrumentationState | undefined => {
+    const state = Reflect.get(request, INKRONIK_HTTP_REQUEST_STATE) as unknown
+
+    if (typeof state !== 'object' || state === null || !('traceContext' in state) || !('captured' in state)) {
+        return undefined
+    }
+
+    return state as HttpRequestInstrumentationState
+}
+
+const createHttpRequestInstrumentationState = (request: HttpLikeRequest): HttpRequestInstrumentationState => {
+    const state: HttpRequestInstrumentationState = {
+        captured: false,
+        traceContext: parseTraceparent(getRequestHeaders(request).traceparent) ?? createRootTraceContext(),
+    }
+
+    try {
+        // The request object is the shared lifecycle boundary between early HTTP middleware and framework adapters.
+        // eslint-disable-next-line functional/immutable-data
+        Object.defineProperty(request, INKRONIK_HTTP_REQUEST_STATE, {
+            configurable: true,
+            enumerable: false,
+            value: state,
+            writable: false,
+        })
+    } catch {
+        return state
+    }
+
+    return state
+}
+
+const getOrCreateHttpRequestInstrumentationState = (request: HttpLikeRequest): HttpRequestInstrumentationState =>
+    getHttpRequestInstrumentationState(request) ?? createHttpRequestInstrumentationState(request)
+
+export const getRequestTraceContext = (request: HttpLikeRequest) => getOrCreateHttpRequestInstrumentationState(request).traceContext
+
+export const hasCapturedHttpExchange = (request: HttpLikeRequest): boolean => getHttpRequestInstrumentationState(request)?.captured === true
+
+export const markHttpExchangeCaptured = (request: HttpLikeRequest): void => {
+    const state = getOrCreateHttpRequestInstrumentationState(request)
+
+    // Request-scoped instrumentation state coordinates independently bundled framework adapters.
+    // eslint-disable-next-line functional/immutable-data
+    state.captured = true
+}
 
 export const getRequestQuery = (request: HttpLikeRequest): Record<string, string> => toStringMap(request.query)
 

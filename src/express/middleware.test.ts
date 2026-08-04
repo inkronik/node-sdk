@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { InkronikClient } from '../client.js'
+import { markHttpExchangeCaptured } from '../http-utils.js'
 import type { HttpLikeRequest, HttpLikeResponse } from '../types.js'
 import { createInkronikExpressMiddleware } from './middleware.js'
 
@@ -271,6 +272,21 @@ describe('createInkronikExpressMiddleware', () => {
 
         expect(capture?.payload.response_body).toBe('failed request')
         expect(signals.find(signal => signal.payload.metric_name === 'http.server.response.size')?.payload.value).toBe(14)
+    })
+
+    test('does not duplicate an exchange already captured by a framework adapter', async () => {
+        const { client, requests } = createTestClient()
+        const request = createRequest()
+        const { response } = createResponse()
+        const middleware = createInkronikExpressMiddleware({ client })
+
+        middleware(request, response, () => undefined)
+        markHttpExchangeCaptured(request)
+        response.end?.()
+
+        await client.shutdown()
+
+        expect(requests).toHaveLength(0)
     })
 
     test('respects explicit request response capture opt-out', async () => {

@@ -159,6 +159,11 @@ export interface TraceContext {
     readonly parentSpanId: string
 }
 
+export interface HttpRequestInstrumentationState {
+    captured: boolean
+    readonly traceContext: TraceContext
+}
+
 export interface TelemetryContext extends TraceContext {
     readonly resolveUser: () => EventUserContext | undefined
     readonly resolveSessionId: () => string
