@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { createRequire } from 'node:module'
+import { resolve } from 'node:path'
 import { getDatabaseOperation, normalizeDatabaseStatement } from './database.js'
 import { getCurrentTraceContext } from './trace-context.js'
 import type {
@@ -16,7 +17,18 @@ import type {
 const PG_MODULE_NAME = 'pg'
 const INKRONIK_ORIGINAL_PG_QUERY = Symbol.for('inkronik.originalPgQuery')
 const pgQuerySuppressionStorage = new AsyncLocalStorage<boolean>()
-const require = createRequire(import.meta.url)
+
+const createConsumerRequires = (): ReadonlyArray<NodeJS.Require> => {
+    const entrypoint = process.argv.at(1)
+    const cwdBasePath = resolve(process.cwd(), 'package.json')
+    const basePaths = entrypoint === undefined ? [cwdBasePath] : [resolve(process.cwd(), entrypoint), cwdBasePath]
+
+    // Resolve optional peer drivers from the consuming application. Anchoring createRequire at import.meta.url is unsafe in the
+    // CommonJS bundle because Bun replaces it with the build machine's source path during compilation.
+    return [...new Set(basePaths)].map(createRequire)
+}
+
+const consumerRequires = createConsumerRequires()
 
 const isRecord = (value: unknown): value is Record<PropertyKey, unknown> => typeof value === 'object' && value !== null
 
@@ -39,13 +51,16 @@ const resolvePgModule = (value: unknown): PgModule | undefined => {
     return isRecord(directModule.default) ? resolvePgModule(directModule.default) : undefined
 }
 
-const loadPgModule = (): PgModule | undefined => {
+const tryLoadPgModule = (consumerRequire: NodeJS.Require): PgModule | undefined => {
     try {
-        return resolvePgModule(require(PG_MODULE_NAME) as unknown)
+        return resolvePgModule(consumerRequire(PG_MODULE_NAME) as unknown)
     } catch {
         return undefined
     }
 }
+
+const loadPgModule = (): PgModule | undefined =>
+    consumerRequires.reduce<PgModule | undefined>((pgModule, consumerRequire) => pgModule ?? tryLoadPgModule(consumerRequire), undefined)
 
 const getQueryStatement = (query: unknown): string => {
     if (typeof query === 'string') {
