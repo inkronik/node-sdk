@@ -332,6 +332,8 @@ export class InkronikClient {
         const traceContext = this.resolveTraceContext(input)
         const route = input.route.length > 0 ? input.route : input.url
         const requestKind = input.requestKind ?? 'http'
+        const capturedError = input.error === undefined ? undefined : normalizeCapturedError(input.error)
+        const hasError = input.statusCode >= 400 || capturedError !== undefined
         const requestAccept = getHttpHeaderValue({ headers: input.requestHeaders, name: 'accept' })
         const responseContentType = getHttpHeaderValue({ headers: input.responseHeaders, name: 'content-type' })
         const requestSizeBytes = resolveHttpMessageSize({
@@ -350,6 +352,15 @@ export class InkronikClient {
         }
         const commonAttributes = {
             ...(input.attributes ?? {}),
+            ...(capturedError === undefined
+                ? {}
+                : {
+                      'error.type': capturedError.type,
+                      'error.message': capturedError.message,
+                      'error.stack': capturedError.stack,
+                      'error.code': capturedError.code,
+                      'error.handled': String(input.errorHandled ?? false),
+                  }),
             'http.method': input.method,
             'http.route': route,
             'http.status_code': String(input.statusCode),
@@ -377,9 +388,9 @@ export class InkronikClient {
                 operation_name: `${input.method} ${route}`,
                 span_kind: 'server',
                 span_category: 'http',
-                status_code: input.statusCode >= 500 ? 'error' : 'ok',
-                status_message: '',
-                has_error: input.statusCode >= 500,
+                status_code: hasError ? 'error' : 'ok',
+                status_message: capturedError?.message ?? '',
+                has_error: hasError,
                 http_method: input.method,
                 http_route: route,
                 http_status_code: input.statusCode,
