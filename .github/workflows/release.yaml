@@ -71,18 +71,6 @@ jobs:
       - name: Audit dependencies
         run: bun audit --audit-level=high
 
-      - name: Test
-        run: bun run test
-
-      - name: Typecheck
-        run: bun run typecheck
-
-      - name: Check lint
-        run: bun run check:lint
-
-      - name: Check formatting
-        run: bun run check:format
-
       - name: Determine and validate release version
         id: version
         env:
@@ -115,12 +103,26 @@ jobs:
 
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Build versioned package
+      - name: Prepare versioned source
         env:
           RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           node scripts/set-package-version.mjs "$RELEASE_VERSION"
-          bun run build
+
+      - name: Test versioned source
+        run: bun run test
+
+      - name: Typecheck versioned source
+        run: bun run typecheck
+
+      - name: Check versioned source lint
+        run: bun run check:lint
+
+      - name: Check versioned source formatting
+        run: bun run check:format
+
+      - name: Build versioned package
+        run: bun run build
 
       - name: Pack and inspect release artifact
         env:
