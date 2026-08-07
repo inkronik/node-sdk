@@ -27,6 +27,7 @@ export interface InkronikClientOptions {
     readonly podName?: string
     readonly source?: string
     readonly defaultAttributes?: Record<string, string>
+    readonly logRedaction?: LogRedactionOptions
     readonly flushIntervalMs?: number
     readonly maxBatchSize?: number
     readonly maxQueueSize?: number
@@ -43,6 +44,7 @@ export interface CreateInkronikClientFromEnvOptions {
     readonly environment?: string
     readonly source?: string
     readonly defaultAttributes?: Record<string, string>
+    readonly logRedaction?: LogRedactionOptions
     readonly flushIntervalMs?: number
     readonly maxBatchSize?: number
     readonly maxQueueSize?: number
@@ -87,10 +89,23 @@ export interface CaptureRedactionOptions {
     readonly redactedValue?: string
 }
 
+export interface LogRedactionOptions extends CaptureRedactionOptions {
+    readonly enabled?: boolean
+}
+
 export interface ResolvedCaptureRedactionOptions {
     readonly fieldNames: ReadonlyArray<string>
     readonly fieldPatterns: ReadonlyArray<RegExp>
     readonly redactedValue: string
+}
+
+export interface ResolvedLogRedactionOptions extends ResolvedCaptureRedactionOptions {
+    readonly enabled: boolean
+}
+
+export interface RedactTelemetryTextInput {
+    readonly redaction: ResolvedCaptureRedactionOptions
+    readonly value: string
 }
 
 export interface RedactCapturedBodyInput {

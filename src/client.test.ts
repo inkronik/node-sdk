@@ -97,6 +97,110 @@ describe('InkronikClient', () => {
         expect(body.signals[0]?.signal_type).toBe('log')
     })
 
+    test('redacts sensitive log content before it enters the telemetry request', async () => {
+        const { fetchImpl, requests } = createTelemetryFetch()
+        const client = new InkronikClient({
+            collectorUrl: 'http://collector:4000',
+            ingestApiKey: 'ik_live_prefix_secret',
+            applicationId: 'application-regression',
+            serviceName: 'orders-api',
+            fetchImpl,
+            flushIntervalMs: 60_000,
+        })
+        const setupToken = 'eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiIxMjMifQ.signature'
+
+        client.log({
+            severityText: 'INFO',
+            severityNumber: 9,
+            message: `Merchant setup: {"setupToken":"${setupToken}","status":"ready"}`,
+            attributes: {
+                setupToken,
+                safe: 'kept',
+            },
+            resourceAttributes: {
+                authorization: `Bearer ${setupToken}`,
+                region: 'eu-central-1',
+            },
+        })
+        await client.shutdown()
+
+        const request = requests[0] as { readonly init?: RequestInit }
+
+        if (typeof request.init?.body !== 'string') {
+            throw new Error('Expected fetch body')
+        }
+
+        const body = JSON.parse(request.init.body) as {
+            readonly signals: ReadonlyArray<{
+                readonly attributes: Record<string, string>
+                readonly payload: {
+                    readonly message: string
+                    readonly log_attributes: Record<string, string>
+                    readonly resource_attributes: Record<string, string>
+                }
+            }>
+        }
+        const signal = body.signals[0]
+
+        expect(signal.payload.message).toBe('Merchant setup: {"setupToken":"[REDACTED]","status":"ready"}')
+        expect(signal.payload.log_attributes).toEqual({ setupToken: '[REDACTED]', safe: 'kept' })
+        expect(signal.payload.resource_attributes).toEqual({ authorization: '[REDACTED]', region: 'eu-central-1' })
+        expect(signal.attributes).toEqual({ setupToken: '[REDACTED]', safe: 'kept' })
+        expect(request.init.body).not.toContain(setupToken)
+    })
+
+    test('supports custom log redaction and an explicit opt-out', async () => {
+        const customFetch = createTelemetryFetch()
+        const customClient = new InkronikClient({
+            collectorUrl: 'http://collector:4000',
+            ingestApiKey: 'ik_live_prefix_secret',
+            serviceName: 'orders-api',
+            fetchImpl: customFetch.fetchImpl,
+            flushIntervalMs: 60_000,
+            logRedaction: {
+                fieldNames: ['merchantPrivateCode'],
+                redactedValue: '<hidden>',
+            },
+        })
+
+        customClient.log({
+            severityText: 'INFO',
+            severityNumber: 9,
+            message: '{"merchantPrivateCode":"merchant-123"}',
+        })
+        await customClient.shutdown()
+
+        const disabledFetch = createTelemetryFetch()
+        const disabledClient = new InkronikClient({
+            collectorUrl: 'http://collector:4000',
+            ingestApiKey: 'ik_live_prefix_secret',
+            serviceName: 'orders-api',
+            fetchImpl: disabledFetch.fetchImpl,
+            flushIntervalMs: 60_000,
+            logRedaction: { enabled: false },
+        })
+
+        disabledClient.log({
+            severityText: 'INFO',
+            severityNumber: 9,
+            message: '{"setupToken":"explicitly-visible"}',
+        })
+        await disabledClient.shutdown()
+
+        const getMessage = (request: FetchRequest): string => {
+            if (typeof request.init?.body !== 'string') {
+                throw new Error('Expected fetch body')
+            }
+
+            const body = JSON.parse(request.init.body) as { readonly signals: ReadonlyArray<{ readonly payload: { readonly message: string } }> }
+
+            return body.signals[0]?.payload.message ?? ''
+        }
+
+        expect(getMessage(customFetch.requests[0] as FetchRequest)).toBe('{"merchantPrivateCode":"<hidden>"}')
+        expect(getMessage(disabledFetch.requests[0] as FetchRequest)).toBe('{"setupToken":"explicitly-visible"}')
+    })
+
     test('captures structured handled errors with message, user context, and stack', async () => {
         const { fetchImpl, requests } = createTelemetryFetch()
         const client = new InkronikClient({
