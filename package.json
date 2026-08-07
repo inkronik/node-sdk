@@ -102,7 +102,7 @@
     "check:runtime": "node scripts/check-package-runtime.mjs cjs && node scripts/check-package-runtime.mjs esm && bun scripts/check-package-runtime.mjs cjs && bun scripts/check-package-runtime.mjs esm",
     "check:types:consumers": "bun tsc --noEmit --project scripts/fixtures/tsconfig.package-consumers.json && node scripts/check-legacy-types.mjs",
     "pack:check": "npm pack --dry-run",
-    "release": "release-it",
+    "release:version": "release-it --release-version --ci",
     "test": "bun test ./src",
     "typecheck": "bun tsc --noEmit --project tsconfig.json"
   },
