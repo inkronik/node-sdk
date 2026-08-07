@@ -1,4 +1,5 @@
 import type { InkronikClient } from '../client.js'
+import { redactCapturedBody } from '../capture-redaction.js'
 import type { CaptureRequestResponseOptions, HttpLikeNext, HttpLikeRequest, HttpLikeResponse } from '../types.js'
 import {
     buildCaptureContext,
@@ -103,9 +104,17 @@ export const createInkronikExpressMiddleware = ({
                             responseBodyType,
                             shouldCaptureRawResponse,
                         }),
-                        requestBody: captureOptions.captureRequestBody ? getRequestBody({ maxBodyBytes: captureOptions.maxBodyBytes, request }) : '',
+                        requestBody: captureOptions.captureRequestBody
+                            ? getRequestBody({ maxBodyBytes: captureOptions.maxBodyBytes, redaction: captureOptions.redaction, request })
+                            : '',
                         requestSizeBytes: getHttpContentLength(context.requestHeaders) ?? getRequestBodySizeBytes(request),
-                        responseBody: shouldCaptureRawResponse ? responseBody.value : stringifyHttpBodySample(responseBodySample),
+                        responseBody: shouldCaptureRawResponse
+                            ? redactCapturedBody({
+                                  maxBytes: captureOptions.maxBodyBytes,
+                                  redaction: captureOptions.redaction,
+                                  value: responseBody.value,
+                              })
+                            : stringifyHttpBodySample(responseBodySample),
                         responseSizeBytes: getHttpContentLength(context.responseHeaders) ?? responseSizeBytes.value,
                         durationMs: performance.now() - startedAt,
                         requestKind: captureOptions.getRequestKind(context),

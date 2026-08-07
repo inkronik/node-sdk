@@ -93,6 +93,18 @@ export interface ResolvedCaptureRedactionOptions {
     readonly redactedValue: string
 }
 
+export interface RedactCapturedBodyInput {
+    readonly maxBytes: number
+    readonly redaction: ResolvedCaptureRedactionOptions
+    readonly value: string
+}
+
+export interface GetRequestBodyInput {
+    readonly maxBodyBytes: number
+    readonly redaction: ResolvedCaptureRedactionOptions
+    readonly request: HttpLikeRequest
+}
+
 export interface CaptureRequestResponseOptions {
     readonly enabled?: boolean
     readonly autoInstrumentFetch?: boolean | InstrumentedFetchOptions

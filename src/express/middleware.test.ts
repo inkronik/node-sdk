@@ -220,6 +220,41 @@ describe('createInkronikExpressMiddleware', () => {
         expect(signals.find(signal => signal.payload.metric_name === 'http.server.response.size')?.payload.value).toBe(11)
     })
 
+    test('redacts nested request and raw response body secrets before sending telemetry', async () => {
+        const { client, requests } = createTestClient()
+        const request = {
+            ...createRequest(),
+            body: {
+                appLink: 'https://service.example/auth?setPasswordToken=opaque-reset-value&source=invitation',
+                operatorCode: 'custom-code-value',
+            },
+        }
+        const { response } = createResponse()
+        const middleware = createInkronikExpressMiddleware({
+            client,
+            options: {
+                captureResponseBody: true,
+                redaction: { fieldNames: ['operatorCode'] },
+            },
+        })
+
+        middleware(request, response, () => undefined)
+        response.end?.('{"continueUrl":"https://service.example?value=eyJhbGciOiJIUzI1NiJ9.payload.signature"}')
+
+        await client.shutdown()
+
+        const signals = getSignals(requests[0] as SentRequest)
+        const capture = signals.find(signal => signal.signal_type === 'request_response_capture')
+
+        expect(JSON.parse(capture?.payload.request_body ?? '')).toEqual({
+            appLink: 'https://service.example/auth?setPasswordToken=[REDACTED]&source=invitation',
+            operatorCode: '[REDACTED]',
+        })
+        expect(JSON.parse(capture?.payload.response_body ?? '')).toEqual({
+            continueUrl: 'https://service.example?value=[REDACTED]',
+        })
+    })
+
     test('captures successful response body sample by default', async () => {
         const { client, requests } = createTestClient()
         const request = createRequest()

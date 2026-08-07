@@ -1,5 +1,6 @@
 import { Observable, tap } from 'rxjs'
 import { Injectable, type CallHandler, type ExecutionContext, type NestInterceptor } from '@nestjs/common'
+import { redactCapturedBody } from '../capture-redaction.js'
 import type { InkronikClient } from '../client.js'
 import type { CaptureRequestResponseOptions, HttpLikeRequest, HttpLikeResponse, ResolvedCaptureRequestResponseOptions } from '../types.js'
 import {
@@ -156,10 +157,13 @@ export class InkronikNestInterceptor implements NestInterceptor {
         const shouldCaptureRawResponse = this.captureOptions.captureResponseBody || isErrorStatusCode(captureContext.statusCode)
         const responseBodySample = getHttpBodySample({ redaction: this.captureOptions.redaction, value: responseValue })
         const bodyMode = shouldCaptureRawResponse ? 'raw' : 'sample'
-        const responseBody = truncateUtf8({
-            maxBytes: this.captureOptions.maxBodyBytes,
-            value: shouldCaptureRawResponse ? serializedResponseBody : stringifyHttpBodySample(responseBodySample),
-        })
+        const responseBody = shouldCaptureRawResponse
+            ? redactCapturedBody({
+                  maxBytes: this.captureOptions.maxBodyBytes,
+                  redaction: this.captureOptions.redaction,
+                  value: serializedResponseBody,
+              })
+            : truncateUtf8({ maxBytes: this.captureOptions.maxBodyBytes, value: stringifyHttpBodySample(responseBodySample) })
 
         this.client.captureHttpExchange({
             ...captureContext,
@@ -170,7 +174,9 @@ export class InkronikNestInterceptor implements NestInterceptor {
                 responseBodyType,
                 shouldCaptureRawResponse,
             }),
-            requestBody: this.captureOptions.captureRequestBody ? getRequestBody({ maxBodyBytes: this.captureOptions.maxBodyBytes, request }) : '',
+            requestBody: this.captureOptions.captureRequestBody
+                ? getRequestBody({ maxBodyBytes: this.captureOptions.maxBodyBytes, redaction: this.captureOptions.redaction, request })
+                : '',
             requestSizeBytes: getHttpContentLength(captureContext.requestHeaders) ?? getRequestBodySizeBytes(request),
             responseBody,
             responseSizeBytes: getHttpContentLength(captureContext.responseHeaders) ?? utf8ByteLength(serializedResponseBody),
