@@ -20,6 +20,7 @@ import type {
     InstrumentedGlobalFetch,
     LogInput,
     LoggerRecord,
+    ResolvedLogRedactionOptions,
     RuntimeMetricsOptions,
     SendTelemetryInput,
     SumInput,
@@ -29,6 +30,7 @@ import type {
 import type { IngestTelemetryRequest, IngestTelemetryResponse, IngestTelemetrySignal } from './protocol/types.js'
 import { getDatabaseOperation, normalizeDatabaseStatement } from './database.js'
 import { getHttpHeaderValue, resolveHttpMessageSize } from './http-utils.js'
+import { redactLogAttributes, redactLogText, resolveLogRedactionOptions } from './log-redaction.js'
 import {
     createChildTraceContext,
     getCurrentTelemetryContext,
@@ -182,6 +184,7 @@ export class InkronikClient {
     private readonly podName: string | undefined
     private readonly source: string
     private readonly defaultAttributes: Record<string, string>
+    private readonly logRedaction: ResolvedLogRedactionOptions
     private readonly maxBatchSize: number
     private readonly maxQueueSize: number
     private readonly requestTimeoutMs: number
@@ -203,6 +206,7 @@ export class InkronikClient {
         this.podName = options.podName === '' ? undefined : options.podName
         this.source = options.source ?? 'node'
         this.defaultAttributes = options.defaultAttributes ?? {}
+        this.logRedaction = resolveLogRedactionOptions(options.logRedaction)
         this.maxBatchSize = Math.max(1, options.maxBatchSize ?? DEFAULT_BATCH_SIZE)
         this.maxQueueSize = Math.max(1, options.maxQueueSize ?? DEFAULT_MAX_QUEUE_SIZE)
         this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
@@ -215,19 +219,24 @@ export class InkronikClient {
     }
 
     log(input: LogInput): void {
+        const attributes = redactLogAttributes({
+            attributes: mergeAttributes({ defaults: this.defaultAttributes, overrides: input.attributes }),
+            redaction: this.logRedaction,
+        })
+
         this.enqueue({
             signal_type: 'log',
             environment: this.environment,
             timestamp: input.timestamp ?? nowIso(),
             source: this.source,
-            attributes: mergeAttributes({ defaults: this.defaultAttributes, overrides: input.attributes }),
+            attributes,
             payload: {
                 log_id: createUuid(),
                 service_name: this.serviceName,
                 source_type: 'application',
                 severity_text: input.severityText,
                 severity_number: input.severityNumber,
-                message: input.message,
+                message: redactLogText({ redaction: this.logRedaction, value: input.message }),
                 trace_id: input.traceId ?? '',
                 span_id: input.spanId ?? '',
                 request_id: input.requestId ?? '',
@@ -238,8 +247,8 @@ export class InkronikClient {
                 pod_name: '',
                 namespace: '',
                 node_name: '',
-                resource_attributes: input.resourceAttributes ?? {},
-                log_attributes: input.attributes ?? {},
+                resource_attributes: redactLogAttributes({ attributes: input.resourceAttributes ?? {}, redaction: this.logRedaction }),
+                log_attributes: redactLogAttributes({ attributes: input.attributes ?? {}, redaction: this.logRedaction }),
             },
         })
     }

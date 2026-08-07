@@ -63,6 +63,7 @@ const buildClientOptions = ({
         podName: options.podName ?? resolvePodName(env),
         source: options.source,
         defaultAttributes: options.defaultAttributes,
+        logRedaction: options.logRedaction,
         flushIntervalMs: options.flushIntervalMs,
         maxBatchSize: options.maxBatchSize,
         maxQueueSize: options.maxQueueSize,

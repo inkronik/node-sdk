@@ -1,4 +1,4 @@
-import type { RedactCapturedBodyInput, ResolvedCaptureRedactionOptions } from './types.js'
+import type { RedactCapturedBodyInput, RedactTelemetryTextInput, ResolvedCaptureRedactionOptions } from './types.js'
 import { truncateUtf8 } from './utils.js'
 
 const DEFAULT_MAX_CAPTURE_REDACTION_DEPTH = 32
@@ -132,14 +132,13 @@ const redactCapturedJsonValue = ({
     )
 }
 
-export const redactCapturedBody = ({ maxBytes, redaction, value }: RedactCapturedBodyInput): string => {
-    const redactedBody = (() => {
-        try {
-            return JSON.stringify(redactCapturedJsonValue({ depth: 0, redaction, value: JSON.parse(value) as unknown }))
-        } catch {
-            return redactSensitiveCaptureText({ redaction, value })
-        }
-    })()
-
-    return truncateUtf8({ maxBytes, value: redactedBody })
+export const redactTelemetryText = ({ redaction, value }: RedactTelemetryTextInput): string => {
+    try {
+        return JSON.stringify(redactCapturedJsonValue({ depth: 0, redaction, value: JSON.parse(value) as unknown }))
+    } catch {
+        return redactSensitiveCaptureText({ redaction, value })
+    }
 }
+
+export const redactCapturedBody = ({ maxBytes, redaction, value }: RedactCapturedBodyInput): string =>
+    truncateUtf8({ maxBytes, value: redactTelemetryText({ redaction, value }) })

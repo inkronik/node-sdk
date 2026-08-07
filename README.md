@@ -72,6 +72,22 @@ inkronik.startRuntimeMetrics()
 const tracedFetch = inkronik.instrumentFetch()
 ```
 
+Log messages, log attributes, and log resource attributes are redacted in the SDK before they are queued. Sensitive keys such as
+`setupToken`, `access_token`, `password`, and `authorization` are replaced with `[REDACTED]` by default, including when they appear in a
+JSON-formatted message. Add application-specific keys or patterns, change the replacement, or explicitly disable log redaction when creating
+the client:
+
+```ts
+const inkronik = createInkronikClientFromEnv({
+    logRedaction: {
+        fieldNames: ['merchantPrivateCode'],
+        fieldPatterns: [/^internalCredential$/i],
+        redactedValue: '<hidden>',
+        // enabled: false, // explicit opt-out; avoid this for production telemetry
+    },
+})
+```
+
 Events support `info`, `warning`, and `error` levels and default to `info`. `captureError` records a handled error with its bounded type, message,
 stack, and string code when available; it does not turn a successful request span into a failed span.
 
