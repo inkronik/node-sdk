@@ -9,12 +9,14 @@ import type {
     HttpRequestInstrumentationState,
     HttpRequestKind,
     InstrumentedFetchOptions,
+    GetRequestBodyInput,
     ResolvedCaptureRequestResponseOptions,
     ResolvedCaptureRedactionOptions,
     ResolveHttpMessageSizeInput,
 } from './types.js'
 import { createRootTraceContext, parseTraceparent } from './trace-context.js'
-import { safeJsonStringify, toStringMap, truncateUtf8, utf8ByteLength } from './utils.js'
+import { isSensitiveCaptureField, redactCapturedBody, redactSensitiveCaptureText } from './capture-redaction.js'
+import { safeJsonStringify, toStringMap, utf8ByteLength } from './utils.js'
 
 const DEFAULT_MAX_BODY_BYTES = 16_384
 const DEFAULT_MAX_BODY_SAMPLE_DEPTH = 5
@@ -27,64 +29,8 @@ const RESPONSE_BODY_TYPE_HEADER = 'inkronik-response-body-type'
 const INKRONIK_HTTP_REQUEST_STATE = Symbol.for('@inkronik/node-sdk.http-request-state.v1')
 const UUID_ROUTE_SEGMENT_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/u
 const NUMERIC_ROUTE_SEGMENT_PATTERN = /^[0-9]+$/u
-const defaultSensitiveFieldNames: ReadonlyArray<string> = [
-    'authorization',
-    'proxy-authorization',
-    'cookie',
-    'set-cookie',
-    'x-api-key',
-    'api-key',
-    'apikey',
-    'x-auth-token',
-    'x-csrf-token',
-    'x-xsrf-token',
-    'x-amz-security-token',
-    'password',
-    'passwd',
-    'passphrase',
-    'secret',
-    'client-secret',
-    'client_secret',
-    'access-token',
-    'access_token',
-    'refresh-token',
-    'refresh_token',
-    'id-token',
-    'id_token',
-    'token',
-    'jwt',
-    'credential',
-    'signature',
-    'session',
-    'card-number',
-    'credit-card',
-    'cvv',
-    'cvc',
-    'ssn',
-]
-const defaultSensitiveFieldFragments: ReadonlyArray<string> = [
-    'password',
-    'passwd',
-    'passphrase',
-    'secret',
-    'token',
-    'api_key',
-    'apikey',
-    'access_key',
-    'private_key',
-    'client_secret',
-    'refresh_token',
-    'id_token',
-    'jwt',
-    'credential',
-    'signature',
-    'session',
-    'cookie',
-]
 const defaultRequestUserContainers: ReadonlyArray<'currentAccount' | 'user'> = ['user', 'currentAccount']
 const defaultRequestUserIdFields: ReadonlyArray<string> = ['uuid', 'id', 'userId', 'user_id', 'sub', 'accountId', 'account_id']
-const textSecretPattern =
-    /((?:password|passwd|passphrase|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret|refresh[_-]?token|id[_-]?token|jwt|credential|signature|session|cookie|card[_-]?number|credit[_-]?card|cvv|cvc|ssn)\s*[:=]\s*)([^&\s,"'}]+)/gi
 
 const stripUrlSuffix = (url: string): string => url.split(/[?#]/u)[0] ?? ''
 
@@ -114,23 +60,6 @@ const getUserContextId = (value: unknown): string => {
     }
 
     return defaultRequestUserIdFields.map(field => toUserId(value[field])).find(userId => userId.length > 0) ?? ''
-}
-
-const normalizeSensitiveFieldName = (name: string): string =>
-    name
-        .toLowerCase()
-        .replaceAll(/[^a-z0-9]+/g, '_')
-        .replaceAll(/^_+|_+$/g, '')
-
-const isSensitiveSampleField = ({ key, redaction }: { readonly key: string; readonly redaction: ResolvedCaptureRedactionOptions }): boolean => {
-    const normalizedKey = normalizeSensitiveFieldName(key)
-    const sensitiveNames = [...defaultSensitiveFieldNames, ...redaction.fieldNames].map(normalizeSensitiveFieldName)
-
-    return (
-        sensitiveNames.includes(normalizedKey) ||
-        defaultSensitiveFieldFragments.some(fragment => normalizedKey.includes(fragment)) ||
-        redaction.fieldPatterns.some(pattern => new RegExp(pattern.source, pattern.flags).test(key))
-    )
 }
 
 const normalizeRouteSegment = (segment: string): string =>
@@ -299,7 +228,7 @@ const truncateSampleString = (value: string): string =>
     value.length > DEFAULT_MAX_BODY_SAMPLE_STRING_LENGTH ? `${value.slice(0, 5)}...${value.slice(-5)}` : value
 
 const sanitizeSampleString = ({ redaction, value }: { readonly redaction: ResolvedCaptureRedactionOptions; readonly value: string }): string =>
-    truncateSampleString(value.replaceAll(textSecretPattern, `$1${redaction.redactedValue}`))
+    truncateSampleString(redactSensitiveCaptureText({ redaction, value }))
 
 const mergeObjectSamples = ({
     depth,
@@ -318,7 +247,7 @@ const mergeObjectSamples = ({
 
                 return [
                     key,
-                    isSensitiveSampleField({ key, redaction })
+                    isSensitiveCaptureField({ key, redaction })
                         ? redaction.redactedValue
                         : getHttpBodySample({ depth: depth + 1, redaction, value: childValue }),
                 ]
@@ -359,7 +288,7 @@ export const getHttpBodySample = ({
                 .slice(0, DEFAULT_MAX_BODY_SAMPLE_KEYS)
                 .map(([key, childValue]) => [
                     key,
-                    isSensitiveSampleField({ key, redaction })
+                    isSensitiveCaptureField({ key, redaction })
                         ? redaction.redactedValue
                         : getHttpBodySample({ depth: depth + 1, redaction, value: childValue }),
                 ]),
@@ -437,8 +366,8 @@ export const inferHttpRequestKind = (context: HttpCaptureContext): HttpRequestKi
     return 'http'
 }
 
-export const getRequestBody = ({ maxBodyBytes, request }: { readonly maxBodyBytes: number; readonly request: HttpLikeRequest }): string =>
-    truncateUtf8({ maxBytes: maxBodyBytes, value: safeJsonStringify(request.body) })
+export const getRequestBody = ({ maxBodyBytes, redaction, request }: GetRequestBodyInput): string =>
+    redactCapturedBody({ maxBytes: maxBodyBytes, redaction, value: safeJsonStringify(request.body) })
 
 export const getRequestBodySizeBytes = (request: HttpLikeRequest): number => utf8ByteLength(safeJsonStringify(request.body))
 

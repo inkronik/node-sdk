@@ -218,7 +218,9 @@ const db = drizzle(sql)
 
 Pass `{ bufferLogs: true }` to `NestFactory.create`, then call `app.useLogger(logger)` and `app.flushLogs()` to forward Nest startup logs as well.
 
-Request bodies and successful response samples are captured by default with a 16 KiB body limit. Response samples keep object fields, truncate strings to 10 characters, keep numbers/booleans, and keep only the first array item plus `...` when more items exist. Successful raw response bodies require `captureResponseBody: true`; error response bodies are captured automatically. The Collector applies server-side redaction before persisting request/response capture signals.
+Request bodies and successful response samples are captured by default with a 16 KiB body limit. Response samples keep object fields, truncate strings to 10 characters, keep numbers/booleans, and keep only the first array item plus `...` when more items exist. Successful raw response bodies require `captureResponseBody: true`; error response bodies are captured automatically. Before telemetry is queued, the SDK recursively redacts sensitive JSON fields, token-bearing URL parameters, and JWT-like values. The Collector repeats server-side redaction before persistence.
+
+Use `redaction.fieldNames` and `redaction.fieldPatterns` to add application-specific sensitive JSON fields, and `redaction.redactedValue` to change the replacement marker. These options only broaden redaction; built-in token patterns cannot be allowlisted for capture.
 
 The NestJS interceptor also captures the Observable error path automatically. `HttpException` responses such as 400 validation errors retain their HTTP status and public response body. Other thrown values are recorded as 500 responses. Every response with status 400 or higher is marked as a failed request; thrown errors additionally attach their bounded type, message, code, and stack trace to the server span. The original exception continues through NestJS unchanged, so existing exception filters keep working without application-level Inkronik code.
 

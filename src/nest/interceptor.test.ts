@@ -179,6 +179,32 @@ describe('InkronikNestInterceptor', () => {
         expect(capture?.payload.response_body).toBe('{"ok":true}')
     })
 
+    test('redacts nested request and raw response body secrets before sending telemetry', async () => {
+        const { client, requests } = createTestClient()
+        const request = {
+            ...createRequest(),
+            body: { appLink: 'https://service.example/auth?resetToken=opaque-reset-value', partnerCredential: 'custom-value' },
+        }
+        const { response } = createResponse()
+        const interceptor = new InkronikNestInterceptor(client, {
+            captureResponseBody: true,
+            redaction: { fieldPatterns: [/^partnerCredential$/u] },
+        })
+        const next: CallHandler = { handle: () => of({ value: 'eyJhbGciOiJIUzI1NiJ9.payload.signature' }) }
+
+        await lastValueFrom(interceptor.intercept(createExecutionContext({ request, response }), next))
+        await client.shutdown()
+
+        const signals = getSignals(requests[0] as SentRequest)
+        const capture = signals.find(signal => signal.signal_type === 'request_response_capture')
+
+        expect(JSON.parse(capture?.payload.request_body ?? '')).toEqual({
+            appLink: 'https://service.example/auth?resetToken=[REDACTED]',
+            partnerCredential: '[REDACTED]',
+        })
+        expect(JSON.parse(capture?.payload.response_body ?? '')).toEqual({ value: '[REDACTED]' })
+    })
+
     test('captures error response bodies by default', async () => {
         const { client, requests } = createTestClient()
         const request = createRequest()
