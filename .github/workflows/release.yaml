@@ -12,7 +12,7 @@ on:
           - main
           - rc
       dry_run:
-        description: Validate the release without committing, tagging, pushing, or publishing
+        description: Build and verify the release without creating a GitHub release or publishing to npm
         required: true
         default: true
         type: boolean
@@ -22,30 +22,41 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
+
+env:
+  PACKAGE_NAME: '@inkronik/node-sdk'
 
 jobs:
-  release:
-    environment: npm
+  prepare-and-verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      source_sha: ${{ steps.source.outputs.source_sha }}
+      version: ${{ steps.version.outputs.version }}
     steps:
-      - name: Checkout release branch
+      - name: Checkout exact release source
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           fetch-depth: 0
-          ref: ${{ inputs.branch }}
+          persist-credentials: false
+          ref: refs/heads/${{ inputs.branch }}
+
+      - name: Record exact release source
+        id: source
+        run: |
+          source_sha="$(git rev-parse HEAD)"
+          if [[ ! "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Invalid source commit: $source_sha" >&2
+            exit 1
+          fi
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node.js
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
-          node-version: 24
+          node-version: 24.19.0
           package-manager-cache: false
-          registry-url: https://registry.npmjs.org
-
-      - name: Setup npm with Trusted Publishing support
-        run: npm install --global npm@11.19.0
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -58,45 +69,177 @@ jobs:
       - name: Audit dependencies
         run: bun audit --audit-level=high
 
-      - name: Test
-        run: bun test
-
-      - name: Typecheck
-        run: bun run typecheck
-
-      - name: Check lint
-        run: bun run check:lint
-
-      - name: Check formatting
-        run: bun run check:format
-
-      - name: Build
-        run: bun run build
-
-      - name: Inspect package contents
-        run: bun run pack:check
-
-      - name: Configure release Git identity
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-      - name: Release
+      - name: Determine and validate release version
+        id: version
         env:
-          DRY_RUN: ${{ inputs.dry_run }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_BRANCH: ${{ inputs.branch }}
         run: |
-          DRY_RUN_ARGS=()
-          if [[ "$DRY_RUN" == "true" ]]; then
-            DRY_RUN_ARGS=(--dry-run)
-          fi
-
           case "$RELEASE_BRANCH" in
             main)
-              bun run release -- --ci "${DRY_RUN_ARGS[@]}"
+              version="$(bun run --silent release:version)"
               ;;
             rc)
-              bun run release -- --ci --preRelease=rc "${DRY_RUN_ARGS[@]}"
+              version="$(bun run --silent release:version -- --preRelease=rc)"
+              ;;
+            *)
+              echo "Unsupported release branch: $RELEASE_BRANCH" >&2
+              exit 1
               ;;
           esac
+
+          if git rev-parse --verify --quiet "refs/tags/v$version"; then
+            echo "Release tag v$version already exists." >&2
+            exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare versioned source
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          npm version "$RELEASE_VERSION" --no-git-tag-version --ignore-scripts
+
+      - name: Test versioned source
+        run: bun run test
+
+      - name: Typecheck versioned source
+        run: bun run typecheck
+
+      - name: Check versioned source lint
+        run: bun run check:lint
+
+      - name: Check versioned source formatting
+        run: bun run check:format
+
+      - name: Build versioned package
+        run: bun run build
+
+      - name: Pack and inspect release artifact
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir release
+          package_filename="$(npm pack --pack-destination release)"
+          mv "release/$package_filename" release/package.tgz
+          tar -tzf release/package.tgz
+          tar -xOf release/package.tgz package/package.json | node -e 'const fs = require("node:fs"); const [expectedName, expectedVersion] = process.argv.slice(1); const manifest = JSON.parse(fs.readFileSync(0, "utf8")); if (manifest.name !== expectedName || manifest.version !== expectedVersion) process.exit(1)' "$PACKAGE_NAME" "$RELEASE_VERSION"
+
+      - name: Test packed package
+        env:
+          PACKAGE_PATH: ${{ github.workspace }}/release/package.tgz
+        run: |
+          consumer_directory="$(mktemp -d)"
+          npm install --prefix "$consumer_directory" --ignore-scripts --no-audit --no-fund "$PACKAGE_PATH"
+          pushd "$consumer_directory" >/dev/null
+          node --input-type=module --eval "await import('$PACKAGE_NAME')"
+          node --eval "require('$PACKAGE_NAME')"
+          popd >/dev/null
+
+      - name: Create package checksum
+        run: |
+          pushd release >/dev/null
+          sha256sum package.tgz > package.tgz.sha256
+          popd >/dev/null
+
+      - name: Upload verified release artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: npm-package
+          path: release
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  create-github-release:
+    if: ${{ !inputs.dry_run }}
+    needs: prepare-and-verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Create tag and GitHub release at exact source commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_BRANCH: ${{ inputs.branch }}
+          RELEASE_VERSION: ${{ needs.prepare-and-verify.outputs.version }}
+          SOURCE_SHA: ${{ needs.prepare-and-verify.outputs.source_sha }}
+        run: |
+          stable_version_pattern='^[0-9]+\.[0-9]+\.[0-9]+$'
+          prerelease_version_pattern='^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$'
+          sha_pattern='^[0-9a-f]{40}$'
+
+          case "$RELEASE_BRANCH" in
+            main) version_pattern="$stable_version_pattern" ;;
+            rc) version_pattern="$prerelease_version_pattern" ;;
+            *)
+              echo "Unsupported release branch: $RELEASE_BRANCH" >&2
+              exit 1
+              ;;
+          esac
+          if [[ ! "$RELEASE_VERSION" =~ $version_pattern || ! "$SOURCE_SHA" =~ $sha_pattern ]]; then
+            echo 'Invalid release metadata.' >&2
+            exit 1
+          fi
+
+          tag="v$RELEASE_VERSION"
+          release_args=(
+            release create "$tag"
+            --repo "$GITHUB_REPOSITORY"
+            --target "$SOURCE_SHA"
+            --title "$tag"
+            --generate-notes
+            --fail-on-no-commits
+          )
+          if [[ "$RELEASE_BRANCH" = "rc" ]]; then
+            release_args+=(--prerelease --latest=false)
+          else
+            release_args+=(--latest)
+          fi
+          gh "${release_args[@]}"
+
+  publish-npm:
+    if: ${{ !inputs.dry_run }}
+    needs:
+      - prepare-and-verify
+      - create-github-release
+    environment: npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Setup Node.js for npm trusted publishing
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24.19.0
+          package-manager-cache: false
+          registry-url: https://registry.npmjs.org
+
+      - name: Download verified release artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: npm-package
+          path: release
+
+      - name: Verify package digest and metadata
+        env:
+          RELEASE_VERSION: ${{ needs.prepare-and-verify.outputs.version }}
+        run: |
+          pushd release >/dev/null
+          sha256sum --check package.tgz.sha256
+          popd >/dev/null
+          tar -xOf release/package.tgz package/package.json | node -e 'const fs = require("node:fs"); const [expectedName, expectedVersion] = process.argv.slice(1); const manifest = JSON.parse(fs.readFileSync(0, "utf8")); if (manifest.name !== expectedName || manifest.version !== expectedVersion) process.exit(1)' "$PACKAGE_NAME" "$RELEASE_VERSION"
+
+      - name: Publish exact package artifact
+        env:
+          RELEASE_BRANCH: ${{ inputs.branch }}
+        run: |
+          if [[ "$RELEASE_BRANCH" = "rc" ]]; then
+            npm_tag=rc
+          else
+            npm_tag=latest
+          fi
+          npm publish ./release/package.tgz --access public --tag "$npm_tag" --ignore-scripts
