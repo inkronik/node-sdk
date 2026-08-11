@@ -202,4 +202,52 @@ describe('initInkronik', () => {
             await shutdownInkronik()
         }
     })
+
+    test('shuts down and flushes the previous client when reinitialized', async () => {
+        const requests: Array<{ readonly init?: RequestInit }> = []
+        const fetchImpl = ((_: RequestInfo | URL, init?: RequestInit) => {
+            // Test spy state is intentionally mutable.
+            // eslint-disable-next-line functional/immutable-data
+            requests.push({ init })
+
+            return Promise.resolve(
+                new Response(JSON.stringify({ accepted: 1, organisation_id: '101', application_id: 'application-regression' }), {
+                    status: 202,
+                    headers: { 'content-type': 'application/json' },
+                }),
+            )
+        }) as typeof fetch
+        const options = {
+            env: {
+                INKRONIK_COLLECTOR_URL: 'http://collector:4000',
+                INKRONIK_INGEST_API_KEY: 'ik_live_prefix_secret',
+                INKRONIK_APPLICATION_ID: 'application-regression',
+                INKRONIK_SERVICE_NAME: 'orders-api',
+            },
+            fetchImpl,
+            flushIntervalMs: 60_000,
+            instrumentations: { bullMQ: false, fetch: false, pg: false, postgres: false, runtimeMetrics: false },
+        } as const
+
+        try {
+            const firstClient = initInkronik(options)
+            firstClient.log({ severityText: 'INFO', severityNumber: 9, message: 'before reinitialization' })
+            initInkronik(options)
+            await new Promise(resolve => setTimeout(resolve, 0))
+
+            expect(requests).toHaveLength(1)
+
+            const request = requests[0]
+
+            if (typeof request.init?.body !== 'string') {
+                throw new Error('Expected collector request body')
+            }
+
+            const body = JSON.parse(request.init.body) as { readonly signals: ReadonlyArray<{ readonly payload: { readonly message?: string } }> }
+
+            expect(body.signals.some(signal => signal.payload.message === 'before reinitialization')).toBe(true)
+        } finally {
+            await shutdownInkronik()
+        }
+    })
 })

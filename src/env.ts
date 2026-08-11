@@ -1,20 +1,18 @@
 import { InkronikClient } from './client.js'
 import { getInkronikRuntimeState } from './runtime-state.js'
+import type { BuildClientOptionsInput, ReadEnvValueInput, ReadRequiredEnvInput, RequiredEnvKey } from './internal/types.js'
 import type { CreateInkronikClientFromEnvOptions, InkronikClientOptions } from './types.js'
 
-const requiredEnvKeys = ['INKRONIK_COLLECTOR_URL', 'INKRONIK_INGEST_API_KEY'] as const
+const requiredEnvKeys: ReadonlyArray<RequiredEnvKey> = ['INKRONIK_COLLECTOR_URL', 'INKRONIK_INGEST_API_KEY']
 const runtimeState = getInkronikRuntimeState()
 
-type RequiredEnvKey = (typeof requiredEnvKeys)[number]
-type EnvKey = RequiredEnvKey | 'INKRONIK_APPLICATION_ID' | 'INKRONIK_SERVICE_VERSION' | 'INKRONIK_POD_NAME' | 'HOSTNAME' | 'KUBERNETES_SERVICE_HOST'
-
-const readEnvValue = ({ env, key }: { readonly env: Record<string, string | undefined>; readonly key: EnvKey }): string | undefined => {
+const readEnvValue = ({ env, key }: ReadEnvValueInput): string | undefined => {
     const value = env[key]?.trim()
 
     return value === '' ? undefined : value
 }
 
-const readRequiredEnv = ({ env, key }: { readonly env: Record<string, string | undefined>; readonly key: RequiredEnvKey }): string => {
+const readRequiredEnv = ({ env, key }: ReadRequiredEnvInput): string => {
     const value = readEnvValue({ env, key })
 
     if (value === undefined) {
@@ -30,15 +28,7 @@ const resolveRequiredEnv = (env: Record<string, string | undefined>) =>
         INKRONIK_INGEST_API_KEY: '',
     })
 
-const buildClientOptions = ({
-    env,
-    options,
-    required,
-}: {
-    readonly env: Record<string, string | undefined>
-    readonly options: CreateInkronikClientFromEnvOptions
-    readonly required: Record<RequiredEnvKey, string>
-}): InkronikClientOptions => {
+const buildClientOptions = ({ env, options, required }: BuildClientOptionsInput): InkronikClientOptions => {
     const serviceName = options.serviceName ?? env.INKRONIK_SERVICE_NAME?.trim()
 
     if (serviceName === undefined || serviceName === '') {

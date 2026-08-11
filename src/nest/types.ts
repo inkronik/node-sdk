@@ -7,7 +7,42 @@ export interface InkronikNestLoggerOptions {
     readonly consoleLogger?: LoggerService
 }
 
-export type NestHttpOutcome = { readonly kind: 'success'; readonly responseBody: unknown } | { readonly error: unknown; readonly kind: 'error' }
+export interface NestLoggerMessageInput {
+    readonly message: unknown
+    readonly optionalParams: ReadonlyArray<unknown>
+}
+
+export interface CaptureNestLoggerRecordInput extends NestLoggerMessageInput {
+    readonly error?: Error
+    readonly level: string
+}
+
+export interface ReadExceptionMemberInput {
+    readonly error: unknown
+    readonly name: string
+}
+
+export interface ResolveExceptionStatusCodeInput {
+    readonly error: unknown
+    readonly response: HttpLikeResponse
+}
+
+export interface ResolveExceptionResponseInput {
+    readonly error: unknown
+    readonly statusCode: number
+}
+
+export interface NestHttpSuccessOutcome {
+    readonly kind: 'success'
+    readonly responseBody: unknown
+}
+
+export interface NestHttpErrorOutcome {
+    readonly error: unknown
+    readonly kind: 'error'
+}
+
+export type NestHttpOutcome = NestHttpSuccessOutcome | NestHttpErrorOutcome
 
 export interface CaptureNestHttpExchangeInput {
     readonly outcome: NestHttpOutcome

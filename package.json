@@ -89,6 +89,7 @@
     "./package.json": "./package.json"
   },
   "scripts": {
+    "benchmark:memory": "bun --expose-gc scripts/memory-benchmark.ts",
     "build": "bun run build:clean && bun run build:js && bun run build:types && bun run build:types:cjs && bun run check:exports && bun run check:runtime && bun run check:types:consumers",
     "build:clean": "bun scripts/clean.ts",
     "build:js": "bun run build:js:esm && bun run build:js:cjs",
@@ -98,7 +99,7 @@
     "build:types:cjs": "node scripts/build-cjs-declarations.mjs",
     "check:exports": "node scripts/check-package-exports.mjs",
     "check:format": "prettier --check .",
-    "check:lint": "eslint src",
+    "check:lint": "eslint src scripts/*.ts --max-warnings 0",
     "check:runtime": "node scripts/check-package-runtime.mjs cjs && node scripts/check-package-runtime.mjs esm && bun scripts/check-package-runtime.mjs cjs && bun scripts/check-package-runtime.mjs esm",
     "check:types:consumers": "bun tsc --noEmit --project scripts/fixtures/tsconfig.package-consumers.json && node scripts/check-legacy-types.mjs",
     "pack:check": "npm pack --dry-run",

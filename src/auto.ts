@@ -3,6 +3,7 @@ import type { InkronikClient } from './client.js'
 import { startPgAutoInstrumentation } from './pg-auto.js'
 import { startPostgresAutoInstrumentation } from './postgres-auto.js'
 import { getInkronikRuntimeState } from './runtime-state.js'
+import type { AsyncInstrumentationState, AutoInstrumentationStartInput } from './internal/types.js'
 import type { InitInkronikOptions } from './types.js'
 
 const BULLMQ_MODULE_NAME = 'bullmq'
@@ -18,7 +19,7 @@ const resolveFetchOptions = (options: InitInkronikOptions): Parameters<InkronikC
     return fetchOptions === true || fetchOptions === undefined ? {} : fetchOptions
 }
 
-const startRuntimeMetrics = ({ client, options }: { readonly client: InkronikClient; readonly options: InitInkronikOptions }): void => {
+const startRuntimeMetrics = ({ client, options }: AutoInstrumentationStartInput): void => {
     const runtimeMetrics = options.instrumentations?.runtimeMetrics
 
     if (runtimeMetrics === false) {
@@ -28,13 +29,7 @@ const startRuntimeMetrics = ({ client, options }: { readonly client: InkronikCli
     client.startRuntimeMetrics(runtimeMetrics === true || runtimeMetrics === undefined ? {} : runtimeMetrics)
 }
 
-const startFetchInstrumentation = ({
-    client,
-    options,
-}: {
-    readonly client: InkronikClient
-    readonly options: InitInkronikOptions
-}): (() => void) | null => {
+const startFetchInstrumentation = ({ client, options }: AutoInstrumentationStartInput): (() => void) | null => {
     const fetchOptions = resolveFetchOptions(options)
 
     if (fetchOptions === false) {
@@ -44,13 +39,7 @@ const startFetchInstrumentation = ({
     return client.instrumentGlobalFetch(fetchOptions)
 }
 
-const startPostgresInstrumentation = ({
-    client,
-    options,
-}: {
-    readonly client: InkronikClient
-    readonly options: InitInkronikOptions
-}): (() => void) | null => {
+const startPostgresInstrumentation = ({ client, options }: AutoInstrumentationStartInput): (() => void) | null => {
     const postgresOptions = options.instrumentations?.postgres
 
     if (postgresOptions === false) {
@@ -63,13 +52,7 @@ const startPostgresInstrumentation = ({
     })
 }
 
-const startPgInstrumentation = ({
-    client,
-    options,
-}: {
-    readonly client: InkronikClient
-    readonly options: InitInkronikOptions
-}): (() => void) | null => {
+const startPgInstrumentation = ({ client, options }: AutoInstrumentationStartInput): (() => void) | null => {
     const pgOptions = options.instrumentations?.pg
 
     if (pgOptions === false) {
@@ -82,13 +65,7 @@ const startPgInstrumentation = ({
     })
 }
 
-const startBullMQInstrumentation = ({
-    client,
-    options,
-}: {
-    readonly client: InkronikClient
-    readonly options: InitInkronikOptions
-}): (() => void) | null => {
+const startBullMQInstrumentation = ({ client, options }: AutoInstrumentationStartInput): (() => void) | null => {
     const bullMQOptions = options.instrumentations?.bullMQ
 
     if (bullMQOptions === false) {
@@ -96,7 +73,7 @@ const startBullMQInstrumentation = ({
     }
 
     const resolvedOptions = bullMQOptions === true || bullMQOptions === undefined ? {} : bullMQOptions
-    const state: { restore: (() => void) | null; active: boolean } = { restore: null, active: true }
+    const state: AsyncInstrumentationState = { restore: null, active: true }
 
     void import(BULLMQ_MODULE_NAME)
         .then(module => {
@@ -119,10 +96,12 @@ const startBullMQInstrumentation = ({
 }
 
 export const initInkronik = (options: InitInkronikOptions = {}): InkronikClient => {
+    const previousClient = autoState.client
     autoState.restoreBullMQ?.()
     autoState.restoreFetch?.()
     autoState.restorePg?.()
     autoState.restorePostgres?.()
+    void previousClient?.shutdown().catch(() => undefined)
 
     const client = createInkronikClientFromEnv(options)
     const restoreBullMQ = startBullMQInstrumentation({ client, options })

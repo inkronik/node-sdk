@@ -1,6 +1,6 @@
 import { Observable, tap } from 'rxjs'
 import { Injectable, type CallHandler, type ExecutionContext, type NestInterceptor } from '@nestjs/common'
-import { redactCapturedBody } from '../capture-redaction.js'
+import { redactSerializedBody } from '../capture-redaction.js'
 import type { InkronikClient } from '../client.js'
 import type { CaptureRequestResponseOptions, HttpLikeRequest, HttpLikeResponse, ResolvedCaptureRequestResponseOptions } from '../types.js'
 import {
@@ -9,10 +9,11 @@ import {
     buildRequestTelemetryContext,
     getHttpContentLength,
     getHttpBodySample,
-    getRequestBody,
+    getCapturedRequestBody,
     getRequestBodySizeBytes,
     getRequestTraceContext,
     getResponseBodyType,
+    getResponseBodySizeBytes,
     isErrorStatusCode,
     markHttpExchangeCaptured,
     resolveCapturedResponseHeaders,
@@ -22,11 +23,16 @@ import {
 } from '../http-utils.js'
 import { runWithTraceContext, toTraceparent } from '../trace-context.js'
 import { normalizeCapturedError, safeJsonStringify, truncateUtf8, utf8ByteLength } from '../utils.js'
-import type { CaptureNestHttpExchangeInput } from './types.js'
+import type {
+    CaptureNestHttpExchangeInput,
+    ReadExceptionMemberInput,
+    ResolveExceptionResponseInput,
+    ResolveExceptionStatusCodeInput,
+} from './types.js'
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === 'object' && value !== null
 
-const readExceptionMember = ({ error, name }: { readonly error: unknown; readonly name: string }): unknown => {
+const readExceptionMember = ({ error, name }: ReadExceptionMemberInput): unknown => {
     if (!isRecord(error)) {
         return undefined
     }
@@ -43,7 +49,7 @@ const readExceptionMember = ({ error, name }: { readonly error: unknown; readonl
 const toErrorStatusCode = (value: unknown): number | undefined =>
     typeof value === 'number' && Number.isInteger(value) && value >= 400 && value <= 599 ? value : undefined
 
-const resolveExceptionStatusCode = ({ error, response }: { readonly error: unknown; readonly response: HttpLikeResponse }): number => {
+const resolveExceptionStatusCode = ({ error, response }: ResolveExceptionStatusCodeInput): number => {
     const exceptionResponse = readExceptionMember({ error, name: 'response' })
     const responseStatusCode = isRecord(exceptionResponse) ? exceptionResponse.statusCode : undefined
     const responseStatus = isRecord(exceptionResponse) ? exceptionResponse.status : undefined
@@ -59,7 +65,7 @@ const resolveExceptionStatusCode = ({ error, response }: { readonly error: unkno
     return candidates.map(toErrorStatusCode).find(statusCode => statusCode !== undefined) ?? 500
 }
 
-const resolveExceptionResponse = ({ error, statusCode }: { readonly error: unknown; readonly statusCode: number }): unknown => {
+const resolveExceptionResponse = ({ error, statusCode }: ResolveExceptionResponseInput): unknown => {
     const publicResponse = readExceptionMember({ error, name: 'getResponse' }) ?? readExceptionMember({ error, name: 'response' })
 
     if (publicResponse !== undefined) {
@@ -152,18 +158,22 @@ export class InkronikNestInterceptor implements NestInterceptor {
         }
 
         const route = this.captureOptions.getRoute(captureContext)
-        const serializedResponseBody = safeJsonStringify(responseValue)
         const responseBodyType = getResponseBodyType(responseValue)
         const shouldCaptureRawResponse = this.captureOptions.captureResponseBody || isErrorStatusCode(captureContext.statusCode)
+        const serializedResponseBody = shouldCaptureRawResponse ? safeJsonStringify(responseValue) : ''
         const responseBodySample = getHttpBodySample({ redaction: this.captureOptions.redaction, value: responseValue })
         const bodyMode = shouldCaptureRawResponse ? 'raw' : 'sample'
         const responseBody = shouldCaptureRawResponse
-            ? redactCapturedBody({
+            ? redactSerializedBody({
                   maxBytes: this.captureOptions.maxBodyBytes,
+                  preserveRawStringSemantics: typeof responseValue === 'string',
                   redaction: this.captureOptions.redaction,
                   value: serializedResponseBody,
               })
             : truncateUtf8({ maxBytes: this.captureOptions.maxBodyBytes, value: stringifyHttpBodySample(responseBodySample) })
+        const capturedRequestBody = this.captureOptions.captureRequestBody
+            ? getCapturedRequestBody({ maxBodyBytes: this.captureOptions.maxBodyBytes, redaction: this.captureOptions.redaction, request })
+            : undefined
 
         this.client.captureHttpExchange({
             ...captureContext,
@@ -174,12 +184,13 @@ export class InkronikNestInterceptor implements NestInterceptor {
                 responseBodyType,
                 shouldCaptureRawResponse,
             }),
-            requestBody: this.captureOptions.captureRequestBody
-                ? getRequestBody({ maxBodyBytes: this.captureOptions.maxBodyBytes, redaction: this.captureOptions.redaction, request })
-                : '',
-            requestSizeBytes: getHttpContentLength(captureContext.requestHeaders) ?? getRequestBodySizeBytes(request),
+            requestBody: capturedRequestBody?.body ?? '',
+            requestSizeBytes:
+                getHttpContentLength(captureContext.requestHeaders) ?? capturedRequestBody?.sizeBytes ?? getRequestBodySizeBytes(request),
             responseBody,
-            responseSizeBytes: getHttpContentLength(captureContext.responseHeaders) ?? utf8ByteLength(serializedResponseBody),
+            responseSizeBytes:
+                getHttpContentLength(captureContext.responseHeaders) ??
+                (shouldCaptureRawResponse ? utf8ByteLength(serializedResponseBody) : getResponseBodySizeBytes(responseValue)),
             durationMs: performance.now() - startedAt,
             requestKind: this.captureOptions.getRequestKind(captureContext),
             captureRequestResponse: this.captureOptions.captureRequestResponse,

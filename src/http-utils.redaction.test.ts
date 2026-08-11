@@ -1,6 +1,6 @@
-import { describe, expect, test } from 'bun:test'
-import { redactCapturedBody } from './capture-redaction.js'
-import { resolveCaptureOptions } from './http-utils.js'
+import { describe, expect, mock, test } from 'bun:test'
+import { redactCapturedBody, redactSensitiveCaptureText, redactSerializedBody } from './capture-redaction.js'
+import { appendBodyChunk, getCapturedRequestBody, getHttpBodySample, resolveCaptureOptions } from './http-utils.js'
 
 const redact = (value: string): string =>
     redactCapturedBody({
@@ -10,6 +10,15 @@ const redact = (value: string): string =>
     })
 
 describe('redactCapturedBody', () => {
+    test('handles large plain strings in linear time without changing them', () => {
+        const value = 'x'.repeat(1_000_000)
+        const redaction = resolveCaptureOptions({}).redaction
+        const startedAt = performance.now()
+
+        expect(redactSensitiveCaptureText({ redaction, value })).toBe(value)
+        expect(performance.now() - startedAt).toBeLessThan(100)
+    })
+
     test('redacts prefixed token parameters inside nested JSON strings', () => {
         const result = redact(
             JSON.stringify({
@@ -45,5 +54,70 @@ describe('redactCapturedBody', () => {
         })
 
         expect(JSON.parse(result)).toEqual({ operatorCode: '***', partnerCredential: '***', safe: 'visible' })
+    })
+
+    test('preserves depth-limit redaction on the optimized serialized-body path', () => {
+        const redaction = resolveCaptureOptions({}).redaction
+        const value = Array.from({ length: 32 }).reduce<unknown>(nested => ({ nested }), 'visible')
+        const serialized = JSON.stringify(value)
+
+        expect(redactSerializedBody({ maxBytes: 16_384, preserveRawStringSemantics: false, redaction, value: serialized })).toBe(
+            redactCapturedBody({ maxBytes: 16_384, redaction, value: serialized }),
+        )
+    })
+
+    test('preserves parse-and-normalize behavior for raw string bodies', () => {
+        const redaction = resolveCaptureOptions({}).redaction
+        const value = ' { "safe": true } '
+
+        expect(redactSerializedBody({ maxBytes: 16_384, preserveRawStringSemantics: true, redaction, value })).toBe('{"safe":true}')
+    })
+
+    test('redacts sensitive assignments nested inside an otherwise safe request field', () => {
+        const redaction = resolveCaptureOptions({}).redaction
+        const captured = getCapturedRequestBody({
+            maxBodyBytes: 16_384,
+            redaction,
+            request: { body: { appLink: 'https://service.example/reset?setPasswordToken=opaque-value&source=invite' } },
+        })
+
+        expect(JSON.parse(captured.body)).toEqual({
+            appLink: 'https://service.example/reset?setPasswordToken=[REDACTED]&source=invite',
+        })
+    })
+})
+
+describe('appendBodyChunk', () => {
+    test('retains a bounded string prefix without splitting code points', () => {
+        expect(appendBodyChunk({ chunk: '😀x', maxBytes: 4, value: '' })).toBe('😀')
+        expect(appendBodyChunk({ chunk: '😀', maxBytes: 4, value: 'a' })).toBe('a')
+    })
+
+    test('drops an incomplete trailing UTF-8 byte sequence', () => {
+        const emoji = new TextEncoder().encode('😀')
+
+        expect(appendBodyChunk({ chunk: emoji, maxBytes: 3, value: '' })).toBe('')
+        expect(appendBodyChunk({ chunk: emoji, maxBytes: 4, value: '' })).toBe('😀')
+    })
+})
+
+describe('getHttpBodySample', () => {
+    test('reads only the bounded object-field prefix', () => {
+        const readField = mock((index: number) => index)
+        const descriptors = Object.fromEntries(
+            Array.from({ length: 100 }, (_, index) => [
+                `field_${index}`,
+                {
+                    configurable: true,
+                    enumerable: true,
+                    get: () => readField(index),
+                },
+            ]),
+        )
+        const value = Object.defineProperties({}, descriptors)
+        const sample = getHttpBodySample({ depth: 0, redaction: resolveCaptureOptions({}).redaction, value })
+
+        expect(Object.keys(sample as object)).toHaveLength(64)
+        expect(readField).toHaveBeenCalledTimes(64)
     })
 })

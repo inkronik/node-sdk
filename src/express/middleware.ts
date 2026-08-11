@@ -1,12 +1,13 @@
-import type { InkronikClient } from '../client.js'
 import { redactCapturedBody } from '../capture-redaction.js'
-import type { CaptureRequestResponseOptions, HttpLikeNext, HttpLikeRequest, HttpLikeResponse } from '../types.js'
+import type { CreateInkronikExpressMiddlewareInput } from '../internal/types.js'
+import type { HttpLikeNext, HttpLikeRequest, HttpLikeResponse } from '../types.js'
 import {
     buildCaptureContext,
     buildRequestTelemetryContext,
+    appendBodyChunk,
     getBodyChunkSizeBytes,
+    getCapturedRequestBody,
     getHttpContentLength,
-    getRequestBody,
     getRequestBodySizeBytes,
     getRequestTraceContext,
     getSerializedHttpBodySample,
@@ -18,18 +19,10 @@ import {
     resolveCapturedResponseHeaders,
     resolveCaptureOptions,
     stringifyHttpBodySample,
-    toBodyChunk,
 } from '../http-utils.js'
 import { runWithTraceContext, toTraceparent } from '../trace-context.js'
-import { truncateUtf8 } from '../utils.js'
 
-export const createInkronikExpressMiddleware = ({
-    client,
-    options = {},
-}: {
-    readonly client: InkronikClient
-    readonly options?: CaptureRequestResponseOptions
-}) => {
+export const createInkronikExpressMiddleware = ({ client, options = {} }: CreateInkronikExpressMiddlewareInput) => {
     const fetchOptions = resolveAutoInstrumentFetchOptions(options.autoInstrumentFetch)
 
     if (options.enabled !== false && fetchOptions !== undefined) {
@@ -64,10 +57,13 @@ export const createInkronikExpressMiddleware = ({
                 responseSizeBytes.value += getBodyChunkSizeBytes(chunk)
 
                 // eslint-disable-next-line functional/immutable-data
-                responseBody.value = truncateUtf8({
-                    maxBytes: captureOptions.maxBodyBytes,
-                    value: `${responseBody.value}${toBodyChunk(chunk)}`,
-                })
+                responseBody.value = captureOptions.captureRequestResponse
+                    ? appendBodyChunk({
+                          chunk,
+                          maxBytes: captureOptions.maxBodyBytes,
+                          value: responseBody.value,
+                      })
+                    : responseBody.value
 
                 return originalWrite.call(response, chunk, encoding, callback)
             }
@@ -76,14 +72,26 @@ export const createInkronikExpressMiddleware = ({
         if (originalEnd !== undefined) {
             // eslint-disable-next-line functional/immutable-data
             response.end = (chunk?: unknown, encoding?: unknown, callback?: unknown): unknown => {
+                // Restore response methods before finalization so a server-retained response cannot retain the
+                // request, client, and capture closures after the exchange completes.
+                if (originalWrite !== undefined) {
+                    // eslint-disable-next-line functional/immutable-data
+                    response.write = originalWrite
+                }
+                // eslint-disable-next-line functional/immutable-data
+                response.end = originalEnd
+
                 // eslint-disable-next-line functional/immutable-data
                 responseSizeBytes.value += getBodyChunkSizeBytes(chunk)
 
                 // eslint-disable-next-line functional/immutable-data
-                responseBody.value = truncateUtf8({
-                    maxBytes: captureOptions.maxBodyBytes,
-                    value: `${responseBody.value}${toBodyChunk(chunk)}`,
-                })
+                responseBody.value = captureOptions.captureRequestResponse
+                    ? appendBodyChunk({
+                          chunk,
+                          maxBytes: captureOptions.maxBodyBytes,
+                          value: responseBody.value,
+                      })
+                    : responseBody.value
 
                 const result = originalEnd.call(response, chunk, encoding, callback)
                 const context = buildCaptureContext({ request, response })
@@ -94,6 +102,9 @@ export const createInkronikExpressMiddleware = ({
                     const shouldCaptureRawResponse = captureOptions.captureResponseBody || isErrorStatusCode(context.statusCode)
                     const responseBodySample = getSerializedHttpBodySample({ redaction: captureOptions.redaction, value: responseBody.value })
                     const bodyMode = shouldCaptureRawResponse ? 'raw' : responseBodySample === undefined ? 'none' : 'sample'
+                    const capturedRequestBody = captureOptions.captureRequestBody
+                        ? getCapturedRequestBody({ maxBodyBytes: captureOptions.maxBodyBytes, redaction: captureOptions.redaction, request })
+                        : undefined
 
                     client.captureHttpExchange({
                         ...context,
@@ -104,10 +115,9 @@ export const createInkronikExpressMiddleware = ({
                             responseBodyType,
                             shouldCaptureRawResponse,
                         }),
-                        requestBody: captureOptions.captureRequestBody
-                            ? getRequestBody({ maxBodyBytes: captureOptions.maxBodyBytes, redaction: captureOptions.redaction, request })
-                            : '',
-                        requestSizeBytes: getHttpContentLength(context.requestHeaders) ?? getRequestBodySizeBytes(request),
+                        requestBody: capturedRequestBody?.body ?? '',
+                        requestSizeBytes:
+                            getHttpContentLength(context.requestHeaders) ?? capturedRequestBody?.sizeBytes ?? getRequestBodySizeBytes(request),
                         responseBody: shouldCaptureRawResponse
                             ? redactCapturedBody({
                                   maxBytes: captureOptions.maxBodyBytes,

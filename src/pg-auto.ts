@@ -2,17 +2,16 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import { getDatabaseOperation, normalizeDatabaseStatement } from './database.js'
-import { getCurrentTraceContext } from './trace-context.js'
 import type {
-    DatabaseInstrumentationOptions,
-    PgAutoInstrumentationClient,
-    PgConstructor,
-    PgModule,
-    PgQueryCallback,
-    PgQueryMethod,
-    PgQueryTarget,
-    StartPgAutoInstrumentationInput,
-} from './types.js'
+    AttachPgCompletionInput,
+    CreatePgQueryWrapperInput,
+    GetPgDatabaseNameInput,
+    InstrumentPgConstructorInput,
+    PgEventEmitterLike,
+    PgQueryCaptureState,
+} from './internal/types.js'
+import { getCurrentTraceContext } from './trace-context.js'
+import type { PgConstructor, PgModule, PgQueryCallback, PgQueryMethod, PgQueryTarget, StartPgAutoInstrumentationInput } from './types.js'
 
 const PG_MODULE_NAME = 'pg'
 const INKRONIK_ORIGINAL_PG_QUERY = Symbol.for('inkronik.originalPgQuery')
@@ -74,20 +73,13 @@ const getQueryStatement = (query: unknown): string => {
     return typeof query.text === 'string' ? query.text : 'pg query'
 }
 
-const getDatabaseName = ({
-    options,
-    target,
-}: {
-    readonly options: DatabaseInstrumentationOptions
-    readonly target: PgQueryTarget
-}): string | undefined => options.databaseName ?? target.database ?? target.options?.database
+const getDatabaseName = ({ options, target }: GetPgDatabaseNameInput): string | undefined =>
+    options.databaseName ?? target.database ?? target.options?.database
 
 const isPromiseLike = (value: unknown): value is PromiseLike<unknown> =>
     (typeof value === 'object' || typeof value === 'function') && value !== null && typeof Reflect.get(value, 'then') === 'function'
 
-const isEventEmitterLike = (
-    value: unknown,
-): value is { once(event: string, listener: (...argumentsList: ReadonlyArray<unknown>) => void): unknown } =>
+const isEventEmitterLike = (value: unknown): value is PgEventEmitterLike =>
     (typeof value === 'object' || typeof value === 'function') && value !== null && typeof Reflect.get(value, 'once') === 'function'
 
 const resolveOriginalQuery = (query: PgQueryMethod): PgQueryMethod => {
@@ -96,7 +88,7 @@ const resolveOriginalQuery = (query: PgQueryMethod): PgQueryMethod => {
     return typeof original === 'function' ? (original as PgQueryMethod) : query
 }
 
-const attachCompletion = ({ capture, result }: { readonly capture: (error?: unknown) => void; readonly result: unknown }): void => {
+const attachCompletion = ({ capture, result }: AttachPgCompletionInput): void => {
     const captureSuccess = capture.bind(undefined, undefined)
 
     if (isPromiseLike(result)) {
@@ -114,17 +106,7 @@ const attachCompletion = ({ capture, result }: { readonly capture: (error?: unkn
     result.once('error', capture)
 }
 
-const createQueryWrapper = ({
-    client,
-    kind,
-    options,
-    originalQuery,
-}: {
-    readonly client: PgAutoInstrumentationClient
-    readonly kind: 'client' | 'pool'
-    readonly options: DatabaseInstrumentationOptions
-    readonly originalQuery: PgQueryMethod
-}): PgQueryMethod => {
+const createQueryWrapper = ({ client, kind, options, originalQuery }: CreatePgQueryWrapperInput): PgQueryMethod => {
     // pg query overloads are positional and variadic by design.
     // eslint-disable-next-line functional/functional-parameters
     const wrapper = function (this: PgQueryTarget, ...argumentsList: ReadonlyArray<unknown>): unknown {
@@ -147,7 +129,7 @@ const createQueryWrapper = ({
         }
 
         const startedAt = performance.now()
-        const state: { captured: boolean } = { captured: false }
+        const state: PgQueryCaptureState = { captured: false }
         const capture = (error?: unknown): void => {
             if (state.captured) {
                 return
@@ -205,17 +187,7 @@ const createQueryWrapper = ({
     return wrapper
 }
 
-const instrumentPgConstructor = ({
-    client,
-    constructor,
-    kind,
-    options,
-}: {
-    readonly client: PgAutoInstrumentationClient
-    readonly constructor: PgConstructor | undefined
-    readonly kind: 'client' | 'pool'
-    readonly options: DatabaseInstrumentationOptions
-}): (() => void) | null => {
+const instrumentPgConstructor = ({ client, constructor, kind, options }: InstrumentPgConstructorInput): (() => void) | null => {
     if (constructor === undefined) {
         return null
     }

@@ -1,8 +1,7 @@
 /* eslint-disable functional/functional-parameters -- Nest LoggerService requires variadic method signatures. */
 import { ConsoleLogger, type LoggerService, type LogLevel } from '@nestjs/common'
-import type { LoggerRecord } from '../types.js'
 import { safeJsonStringify } from '../utils.js'
-import type { InkronikNestLoggerOptions } from './types.js'
+import type { CaptureNestLoggerRecordInput, InkronikNestLoggerOptions, NestLoggerMessageInput } from './types.js'
 
 const getContext = (optionalParams: ReadonlyArray<unknown>): string | undefined => {
     const lastParam = optionalParams.at(-1)
@@ -15,13 +14,13 @@ const getMessageParams = (optionalParams: ReadonlyArray<unknown>): ReadonlyArray
 
 const formatValue = (value: unknown): string => (value instanceof Error ? value.message : safeJsonStringify(value))
 
-const formatMessage = ({ message, optionalParams }: { readonly message: unknown; readonly optionalParams: ReadonlyArray<unknown> }): string => {
+const formatMessage = ({ message, optionalParams }: NestLoggerMessageInput): string => {
     const values = [message, ...getMessageParams(optionalParams)].map(formatValue).filter(value => value.length > 0)
 
     return values.join(' ')
 }
 
-const getError = ({ message, optionalParams }: { readonly message: unknown; readonly optionalParams: ReadonlyArray<unknown> }): Error | undefined => {
+const getError = ({ message, optionalParams }: NestLoggerMessageInput): Error | undefined => {
     if (message instanceof Error) {
         return message
     }
@@ -72,17 +71,7 @@ export class InkronikNestLogger implements LoggerService {
         this.consoleLogger.setLogLevels?.(levels)
     }
 
-    private capture({
-        error,
-        level,
-        message,
-        optionalParams,
-    }: {
-        readonly error?: Error
-        readonly level: LoggerRecord['level']
-        readonly message: unknown
-        readonly optionalParams: ReadonlyArray<unknown>
-    }): void {
+    private capture({ error, level, message, optionalParams }: CaptureNestLoggerRecordInput): void {
         const context = getContext(optionalParams)
         const attributes = context === undefined ? undefined : { 'nest.context': context }
 

@@ -980,4 +980,64 @@ describe('InkronikClient', () => {
         expect(errors[0]?.message).toContain('queue is full')
         expect(body.signals.map(signal => signal.payload.message)).toEqual(['second', 'third'])
     })
+
+    test('bounds in-flight telemetry while the collector is stalled', async () => {
+        const requests: Array<{ readonly init?: RequestInit }> = []
+        const errors: Array<Error> = []
+        const firstRequestState: { resolve?: (response: Response) => void } = {}
+        const firstRequest = new Promise<Response>(resolve => {
+            // Test deferred state is intentionally mutable.
+            // eslint-disable-next-line functional/immutable-data
+            firstRequestState.resolve = resolve
+        })
+        const collectorResponse = (): Response =>
+            new Response(JSON.stringify({ accepted: 1, organisation_id: '101', application_id: 'application-regression' }), {
+                status: 202,
+                headers: { 'content-type': 'application/json' },
+            })
+        const fetchImpl = ((_: RequestInfo | URL, init?: RequestInit) => {
+            // Test spy state is intentionally mutable.
+            // eslint-disable-next-line functional/immutable-data
+            requests.push({ init })
+
+            return requests.length === 1 ? firstRequest : Promise.resolve(collectorResponse())
+        }) as typeof fetch
+        const client = new InkronikClient({
+            collectorUrl: 'http://collector:4000',
+            ingestApiKey: 'ik_live_prefix_secret',
+            applicationId: 'application-regression',
+            serviceName: 'orders-api',
+            fetchImpl,
+            flushIntervalMs: 60_000,
+            maxBatchSize: 1,
+            maxQueueSize: 3,
+            onError: error => {
+                // Test spy state is intentionally mutable.
+                // eslint-disable-next-line functional/immutable-data
+                errors.push(error)
+            },
+        })
+
+        Array.from({ length: 10 }, (_, index) => `message-${index}`).forEach(message =>
+            client.log({ severityText: 'INFO', severityNumber: 9, message }),
+        )
+
+        expect(requests).toHaveLength(1)
+        expect(errors).toHaveLength(6)
+        firstRequestState.resolve?.(collectorResponse())
+        await client.shutdown()
+
+        const messages = requests.flatMap(request => {
+            if (typeof request.init?.body !== 'string') {
+                return []
+            }
+
+            const body = JSON.parse(request.init.body) as { readonly signals: ReadonlyArray<{ readonly payload: { readonly message: string } }> }
+
+            return body.signals.map(signal => signal.payload.message)
+        })
+
+        expect(requests).toHaveLength(4)
+        expect(messages).toEqual(['message-0', 'message-7', 'message-8', 'message-9'])
+    })
 })

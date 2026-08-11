@@ -1,4 +1,5 @@
 import { isSensitiveCaptureField, redactSensitiveCaptureText, redactTelemetryText } from './capture-redaction.js'
+import type { RedactLogAttributesInput, RedactLogTextInput } from './internal/types.js'
 import type { LogRedactionOptions, ResolvedLogRedactionOptions } from './types.js'
 
 const DEFAULT_REDACTED_VALUE = '[REDACTED]'
@@ -16,7 +17,7 @@ export const resolveLogRedactionOptions = (options: LogRedactionOptions = {}): R
     redactedValue: options.redactedValue ?? DEFAULT_REDACTED_VALUE,
 })
 
-export const redactLogText = ({ redaction, value }: { readonly redaction: ResolvedLogRedactionOptions; readonly value: string }): string => {
+export const redactLogText = ({ redaction, value }: RedactLogTextInput): string => {
     if (!redaction.enabled) {
         return value
     }
@@ -24,13 +25,7 @@ export const redactLogText = ({ redaction, value }: { readonly redaction: Resolv
     return isJsonContainerText(value) ? redactTelemetryText({ redaction, value }) : redactSensitiveCaptureText({ redaction, value })
 }
 
-export const redactLogAttributes = ({
-    attributes,
-    redaction,
-}: {
-    readonly attributes: Record<string, string>
-    readonly redaction: ResolvedLogRedactionOptions
-}): Record<string, string> => {
+export const redactLogAttributes = ({ attributes, redaction }: RedactLogAttributesInput): Record<string, string> => {
     if (!redaction.enabled) {
         return attributes
     }
