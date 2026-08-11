@@ -1,12 +1,6 @@
 import { Buffer } from 'node:buffer'
 import { randomBytes, randomUUID } from 'node:crypto'
-import type {
-    ErrorPropertyInput,
-    JsonValueByteLengthInput,
-    MergeAttributesInput,
-    NormalizeJsonValueInput,
-    TruncateUtf8Input,
-} from './internal/types.js'
+import type { ErrorPropertyInput, MergeAttributesInput, TruncateUtf8Input } from './internal/types.js'
 import type { CapturedError, EventUserContext } from './types.js'
 
 const MAX_ERROR_TYPE_LENGTH = 255
@@ -24,7 +18,7 @@ const safeString = (value: unknown): string => {
     }
 }
 
-const escapedJsonStringByteLength = (value: string): number => {
+export const getJsonStringByteLength = (value: string): number => {
     /* eslint-disable functional/no-let, functional/no-loop-statements -- Exact byte counting must stay O(1) in auxiliary memory. */
     let bytes = 2
 
@@ -67,7 +61,7 @@ const escapedJsonStringByteLength = (value: string): number => {
     return bytes
 }
 
-const normalizeJsonValue = ({ key, value }: NormalizeJsonValueInput): unknown => {
+export const normalizeJsonValue = (key: string, value: unknown): unknown => {
     if ((typeof value === 'object' && value !== null) || typeof value === 'bigint') {
         const toJson = Reflect.get(Object(value), 'toJSON') as unknown
 
@@ -87,46 +81,44 @@ const normalizeJsonValue = ({ key, value }: NormalizeJsonValueInput): unknown =>
     return value
 }
 
-const jsonValueByteLength = ({ key, stack, value }: JsonValueByteLengthInput): number | undefined => {
-    const normalized = normalizeJsonValue({ key, value })
-
-    if (normalized === null) {
+export const getNormalizedJsonValueByteLength = (stack: Array<object>, value: unknown): number | undefined => {
+    if (value === null) {
         return 4
     }
 
-    if (typeof normalized === 'string') {
-        return escapedJsonStringByteLength(normalized)
+    if (typeof value === 'string') {
+        return getJsonStringByteLength(value)
     }
 
-    if (typeof normalized === 'number') {
-        return Number.isFinite(normalized) ? String(normalized).length : 4
+    if (typeof value === 'number') {
+        return Number.isFinite(value) ? String(value).length : 4
     }
 
-    if (typeof normalized === 'boolean') {
-        return normalized ? 4 : 5
+    if (typeof value === 'boolean') {
+        return value ? 4 : 5
     }
 
-    if (typeof normalized === 'bigint') {
+    if (typeof value === 'bigint') {
         throw new TypeError('Do not know how to serialize a BigInt')
     }
 
-    if (typeof normalized !== 'object') {
+    if (typeof value !== 'object') {
         return undefined
     }
 
-    if (stack.has(normalized)) {
+    if (stack.includes(value)) {
         throw new TypeError('Converting circular structure to JSON')
     }
 
-    /* eslint-disable functional/immutable-data, functional/no-let, functional/no-loop-statements -- Shared ancestor state keeps circular detection O(depth); immutable Set copies would make large JSON traversal allocation-heavy. */
-    stack.add(normalized)
+    /* eslint-disable functional/immutable-data, functional/no-let, functional/no-loop-statements -- A LIFO ancestor stack stays O(depth); Set.delete retains large tombstone tables in Bun for wide payloads. */
+    stack.push(value)
 
     try {
-        if (Array.isArray(normalized)) {
+        if (Array.isArray(value)) {
             let itemsSize = 0
 
-            for (let index = 0; index < normalized.length; index += 1) {
-                const itemSize = jsonValueByteLength({ key: String(index), stack, value: Reflect.get(normalized, index) })
+            for (let index = 0; index < value.length; index += 1) {
+                const itemSize = getJsonValueByteLength(String(index), stack, Reflect.get(value, index))
                 itemsSize += (index === 0 ? 0 : 1) + (itemSize ?? 4)
             }
 
@@ -136,21 +128,24 @@ const jsonValueByteLength = ({ key, stack, value }: JsonValueByteLengthInput): n
         let propertiesSize = 0
         let serializedProperties = 0
 
-        for (const property of Object.keys(normalized)) {
-            const itemSize = jsonValueByteLength({ key: property, stack, value: Reflect.get(normalized, property) })
+        for (const property of Object.keys(value)) {
+            const itemSize = getJsonValueByteLength(property, stack, Reflect.get(value, property))
 
             if (itemSize !== undefined) {
-                propertiesSize += (serializedProperties === 0 ? 0 : 1) + escapedJsonStringByteLength(property) + 1 + itemSize
+                propertiesSize += (serializedProperties === 0 ? 0 : 1) + getJsonStringByteLength(property) + 1 + itemSize
                 serializedProperties += 1
             }
         }
 
         return propertiesSize + 2
     } finally {
-        stack.delete(normalized)
+        stack.pop()
         /* eslint-enable functional/immutable-data, functional/no-let, functional/no-loop-statements */
     }
 }
+
+export const getJsonValueByteLength = (key: string, stack: Array<object>, value: unknown): number | undefined =>
+    getNormalizedJsonValueByteLength(stack, normalizeJsonValue(key, value))
 
 const errorProperty = ({ error, property }: ErrorPropertyInput): string => {
     if (!isRecord(error)) {
@@ -238,7 +233,7 @@ export const safeJsonByteLength = (value: unknown): number => {
     }
 
     try {
-        return jsonValueByteLength({ key: '', stack: new Set(), value }) ?? 0
+        return getJsonValueByteLength('', [], value) ?? 0
     } catch {
         return utf8ByteLength('[unserializable]')
     }

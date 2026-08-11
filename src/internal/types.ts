@@ -17,15 +17,6 @@ import type {
     TraceContext,
 } from '../types.js'
 
-export interface NormalizeJsonValueInput {
-    readonly key: string
-    readonly value: unknown
-}
-
-export interface JsonValueByteLengthInput extends NormalizeJsonValueInput {
-    readonly stack: Set<object>
-}
-
 export interface ErrorPropertyInput {
     readonly error: unknown
     readonly property: string
@@ -174,6 +165,58 @@ export interface GetCompleteUtf8PrefixInput {
 export interface BuildCaptureContextInput {
     readonly request: HttpLikeRequest
     readonly response: HttpLikeResponse
+}
+
+export interface BoundedUtf8Writer {
+    readonly append: (value: string) => void
+    readonly output: string
+    readonly remainingBytes: number
+    readonly stop: () => void
+    readonly stopped: boolean
+}
+
+export interface CreateBoundedUtf8WriterInput {
+    readonly maxBytes: number
+}
+
+export interface WriteCapturedJsonStringInput {
+    readonly close: boolean
+    readonly value: string
+    readonly writer: BoundedUtf8Writer
+}
+
+export interface WriteRedactedStringInput {
+    readonly redaction: ResolvedCaptureRedactionOptions
+    readonly value: string
+    readonly writer: BoundedUtf8Writer
+}
+
+export interface SerializeCapturedObjectPropertyInput extends SerializeCapturedJsonValueInput {
+    readonly property: string
+    readonly serializedProperties: number
+}
+
+export interface SerializeCapturedJsonArrayInput extends SerializeCapturedJsonValueInput {
+    readonly value: ReadonlyArray<unknown>
+}
+
+export interface SerializeCapturedJsonObjectInput extends SerializeCapturedJsonValueInput {
+    readonly value: object
+}
+
+export interface SerializeCapturedJsonValueInput {
+    readonly capture: boolean
+    readonly depth: number
+    readonly redaction: ResolvedCaptureRedactionOptions
+    readonly stack: Array<object>
+    readonly value: unknown
+    readonly writer: BoundedUtf8Writer
+}
+
+export interface CaptureBodyValueInput {
+    readonly maxBodyBytes: number
+    readonly redaction: ResolvedCaptureRedactionOptions
+    readonly value: unknown
 }
 
 export interface CreateInkronikExpressMiddlewareInput {

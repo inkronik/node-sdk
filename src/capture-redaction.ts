@@ -2,7 +2,7 @@ import type { RedactCapturedJsonValueInput, SensitiveCaptureFieldInput } from '.
 import type { RedactCapturedBodyInput, RedactSerializedBodyInput, RedactTelemetryTextInput } from './types.js'
 import { truncateUtf8 } from './utils.js'
 
-const DEFAULT_MAX_CAPTURE_REDACTION_DEPTH = 32
+export const MAX_CAPTURE_REDACTION_DEPTH = 32
 const defaultSensitiveFieldNames: ReadonlyArray<string> = [
     'authorization',
     'proxy-authorization',
@@ -95,8 +95,45 @@ export const redactSensitiveCaptureText = ({ redaction, value }: RedactTelemetry
     return assignmentRedacted.includes('eyJ') ? assignmentRedacted.replaceAll(jwtPattern, redaction.redactedValue) : assignmentRedacted
 }
 
+const isJwtCandidateCodeUnit = (codeUnit: number): boolean =>
+    codeUnit === 0x2d ||
+    codeUnit === 0x2e ||
+    (codeUnit >= 0x30 && codeUnit <= 0x39) ||
+    (codeUnit >= 0x41 && codeUnit <= 0x5a) ||
+    codeUnit === 0x5f ||
+    (codeUnit >= 0x61 && codeUnit <= 0x7a)
+
+const getTruncatedJwtCandidateStart = (value: string): number => {
+    /* eslint-disable functional/no-let, functional/no-loop-statements -- A reverse linear scan avoids regex backtracking on attacker-controlled capture data. */
+    let dotCount = 0
+
+    for (let index = value.length - 1; index >= 0; index -= 1) {
+        const codeUnit = value.charCodeAt(index)
+
+        if (!isJwtCandidateCodeUnit(codeUnit)) {
+            return value.indexOf('eyJ', index + 1)
+        }
+
+        dotCount += codeUnit === 0x2e ? 1 : 0
+
+        if (dotCount > 2) {
+            return value.indexOf('eyJ', index + 1)
+        }
+    }
+    /* eslint-enable functional/no-let, functional/no-loop-statements */
+
+    return value.indexOf('eyJ')
+}
+
+export const redactTruncatedSensitiveCaptureText = ({ redaction, value }: RedactTelemetryTextInput): string => {
+    const redacted = redactSensitiveCaptureText({ redaction, value })
+    const candidateStart = redacted.includes('eyJ') ? getTruncatedJwtCandidateStart(redacted) : -1
+
+    return candidateStart < 0 ? redacted : `${redacted.slice(0, candidateStart)}${redaction.redactedValue}`
+}
+
 const redactCapturedJsonValue = ({ depth, redaction, value }: RedactCapturedJsonValueInput): unknown => {
-    if (depth >= DEFAULT_MAX_CAPTURE_REDACTION_DEPTH) {
+    if (depth >= MAX_CAPTURE_REDACTION_DEPTH) {
         return redaction.redactedValue
     }
 
@@ -154,7 +191,7 @@ const hasDeepJsonStructure = (value: string): boolean => {
         if (opensContainer) {
             depth += 1
 
-            if (depth >= DEFAULT_MAX_CAPTURE_REDACTION_DEPTH) {
+            if (depth >= MAX_CAPTURE_REDACTION_DEPTH) {
                 return true
             }
         }
@@ -180,6 +217,12 @@ export const redactTelemetryText = ({ redaction, value }: RedactTelemetryTextInp
 
 export const redactCapturedBody = ({ maxBytes, redaction, value }: RedactCapturedBodyInput): string =>
     truncateUtf8({ maxBytes, value: redactTelemetryText({ redaction, value }) })
+
+export const redactTruncatedCapturedBody = ({ maxBytes, redaction, value }: RedactCapturedBodyInput): string =>
+    truncateUtf8({
+        maxBytes,
+        value: redactTruncatedSensitiveCaptureText({ redaction, value: redactTelemetryText({ redaction, value }) }),
+    })
 
 export const redactSerializedBody = ({ maxBytes, preserveRawStringSemantics, redaction, value }: RedactSerializedBodyInput): string => {
     if (preserveRawStringSemantics) {
