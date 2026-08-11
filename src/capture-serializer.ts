@@ -1,4 +1,11 @@
-import { isSensitiveCaptureField, MAX_CAPTURE_REDACTION_DEPTH, redactCapturedBody, redactSensitiveCaptureText } from './capture-redaction.js'
+import {
+    isSensitiveCaptureField,
+    MAX_CAPTURE_REDACTION_DEPTH,
+    redactCapturedBody,
+    redactSensitiveCaptureText,
+    redactTruncatedCapturedBody,
+    redactTruncatedSensitiveCaptureText,
+} from './capture-redaction.js'
 import type {
     BoundedUtf8Writer,
     CaptureBodyValueInput,
@@ -104,7 +111,9 @@ const writeCapturedJsonString = ({ close, value, writer }: WriteCapturedJsonStri
 const writeRedactedString = ({ redaction, value, writer }: WriteRedactedStringInput): void => {
     const prefix = truncateUtf8({ maxBytes: writer.remainingBytes, value })
     const truncated = prefix.length < value.length
-    const redacted = redactSensitiveCaptureText({ redaction, value: prefix })
+    const redacted = truncated
+        ? redactTruncatedSensitiveCaptureText({ redaction, value: prefix })
+        : redactSensitiveCaptureText({ redaction, value: prefix })
     writeCapturedJsonString({ close: !truncated, value: redacted, writer })
 
     if (truncated) {
@@ -299,9 +308,12 @@ export const captureBodyValue = ({ maxBodyBytes, redaction, value }: CaptureBody
 
     if (typeof value === 'string') {
         const prefix = truncateUtf8({ maxBytes: maxBodyBytes, value })
+        const truncated = prefix.length < value.length
 
         return {
-            body: redactCapturedBody({ maxBytes: maxBodyBytes, redaction, value: prefix }),
+            body: truncated
+                ? redactTruncatedCapturedBody({ maxBytes: maxBodyBytes, redaction, value: prefix })
+                : redactCapturedBody({ maxBytes: maxBodyBytes, redaction, value: prefix }),
             sizeBytes: utf8ByteLength(value),
         }
     }

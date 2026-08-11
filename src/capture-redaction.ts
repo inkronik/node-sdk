@@ -60,7 +60,8 @@ const defaultSensitiveFieldFragments: ReadonlyArray<string> = [
 const defaultSensitiveFieldCandidatePattern =
     /password|passwd|passphrase|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|jwt|credential|signature|session|cookie|authorization|card|cvv|cvc|ssn/iu
 const textAssignmentPattern = /(^|[^a-z0-9_.-])(["']?([a-z0-9_.-]+)["']?(?:\s*[:=]\s*["']?|%3d))(?!\/\/)((?:(?!%26)[^&\s,"'}])+)/giu
-const jwtPattern = /\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/gu
+const jwtPattern = /eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/gu
+const truncatedJwtCandidatePattern = /eyJ[A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]*){0,2}$/u
 const encodedAssignmentPattern = /%3d/iu
 
 const normalizeSensitiveFieldName = (name: string): string =>
@@ -93,6 +94,12 @@ export const redactSensitiveCaptureText = ({ redaction, value }: RedactTelemetry
         : value
 
     return assignmentRedacted.includes('eyJ') ? assignmentRedacted.replaceAll(jwtPattern, redaction.redactedValue) : assignmentRedacted
+}
+
+export const redactTruncatedSensitiveCaptureText = ({ redaction, value }: RedactTelemetryTextInput): string => {
+    const redacted = redactSensitiveCaptureText({ redaction, value })
+
+    return redacted.includes('eyJ') ? redacted.replace(truncatedJwtCandidatePattern, redaction.redactedValue) : redacted
 }
 
 const redactCapturedJsonValue = ({ depth, redaction, value }: RedactCapturedJsonValueInput): unknown => {
@@ -180,6 +187,12 @@ export const redactTelemetryText = ({ redaction, value }: RedactTelemetryTextInp
 
 export const redactCapturedBody = ({ maxBytes, redaction, value }: RedactCapturedBodyInput): string =>
     truncateUtf8({ maxBytes, value: redactTelemetryText({ redaction, value }) })
+
+export const redactTruncatedCapturedBody = ({ maxBytes, redaction, value }: RedactCapturedBodyInput): string =>
+    truncateUtf8({
+        maxBytes,
+        value: redactTruncatedSensitiveCaptureText({ redaction, value: redactTelemetryText({ redaction, value }) }),
+    })
 
 export const redactSerializedBody = ({ maxBytes, preserveRawStringSemantics, redaction, value }: RedactSerializedBodyInput): string => {
     if (preserveRawStringSemantics) {

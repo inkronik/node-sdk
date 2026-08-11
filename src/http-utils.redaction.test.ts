@@ -40,6 +40,10 @@ describe('redactCapturedBody', () => {
         expect(redact('{"value":"eyJhbGciOiJIUzI1NiJ9.payload.signature"}')).toBe('{"value":"[REDACTED]"}')
     })
 
+    test('redacts JWT-like values embedded in other text', () => {
+        expect(redact('prefixeyJhbGciOiJIUzI1NiJ9.payload.signatureSuffix')).toBe('prefix[REDACTED]')
+    })
+
     test('applies configured field names and patterns to raw JSON bodies', () => {
         const redaction = resolveCaptureOptions({
             redaction: {
@@ -143,6 +147,40 @@ describe('getCapturedRequestBody', () => {
         expect(utf8ByteLength(captured.body)).toBeLessThanOrEqual(101)
         expect(captured.body).not.toContain('\uFFFD')
         expect(captured.sizeBytes).toBe(40_014)
+    })
+
+    test('redacts a JWT crossing a small structured capture boundary', () => {
+        const captured = getCapturedRequestBody({
+            maxBodyBytes: 32,
+            redaction: resolveCaptureOptions({}).redaction,
+            request: { body: { message: 'aaaaeyJheader.payload.signature' } },
+        })
+
+        expect(captured.body).toContain('[REDACTED]')
+        expect(captured.body).not.toContain('eyJ')
+    })
+
+    test('redacts a JWT crossing the default structured capture boundary', () => {
+        const captured = getCapturedRequestBody({
+            maxBodyBytes: 16_384,
+            redaction: resolveCaptureOptions({}).redaction,
+            request: { body: { payload: `${'a'.repeat(16_360)}eyJheader.payload.signature` } },
+        })
+
+        expect(utf8ByteLength(captured.body)).toBeLessThanOrEqual(16_384)
+        expect(captured.body).toContain('[REDACTED]')
+        expect(captured.body).not.toContain('eyJ')
+    })
+
+    test('redacts a JWT crossing a raw string capture boundary', () => {
+        const captured = getCapturedRequestBody({
+            maxBodyBytes: 18,
+            redaction: resolveCaptureOptions({}).redaction,
+            request: { body: 'aaaaeyJheader.payload.signature' },
+        })
+
+        expect(captured.body).toBe('aaaa[REDACTED]')
+        expect(captured.sizeBytes).toBe(31)
     })
 
     test('redacts a sensitive value from a truncated raw JSON body', () => {
