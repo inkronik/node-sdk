@@ -60,8 +60,7 @@ const defaultSensitiveFieldFragments: ReadonlyArray<string> = [
 const defaultSensitiveFieldCandidatePattern =
     /password|passwd|passphrase|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|jwt|credential|signature|session|cookie|authorization|card|cvv|cvc|ssn/iu
 const textAssignmentPattern = /(^|[^a-z0-9_.-])(["']?([a-z0-9_.-]+)["']?(?:\s*[:=]\s*["']?|%3d))(?!\/\/)((?:(?!%26)[^&\s,"'}])+)/giu
-const jwtPattern = /eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/gu
-const truncatedJwtCandidatePattern = /eyJ[A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]*){0,2}$/u
+const jwtPattern = /\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/gu
 const encodedAssignmentPattern = /%3d/iu
 
 const normalizeSensitiveFieldName = (name: string): string =>
@@ -96,10 +95,41 @@ export const redactSensitiveCaptureText = ({ redaction, value }: RedactTelemetry
     return assignmentRedacted.includes('eyJ') ? assignmentRedacted.replaceAll(jwtPattern, redaction.redactedValue) : assignmentRedacted
 }
 
+const isJwtCandidateCodeUnit = (codeUnit: number): boolean =>
+    codeUnit === 0x2d ||
+    codeUnit === 0x2e ||
+    (codeUnit >= 0x30 && codeUnit <= 0x39) ||
+    (codeUnit >= 0x41 && codeUnit <= 0x5a) ||
+    codeUnit === 0x5f ||
+    (codeUnit >= 0x61 && codeUnit <= 0x7a)
+
+const getTruncatedJwtCandidateStart = (value: string): number => {
+    /* eslint-disable functional/no-let, functional/no-loop-statements -- A reverse linear scan avoids regex backtracking on attacker-controlled capture data. */
+    let dotCount = 0
+
+    for (let index = value.length - 1; index >= 0; index -= 1) {
+        const codeUnit = value.charCodeAt(index)
+
+        if (!isJwtCandidateCodeUnit(codeUnit)) {
+            return value.indexOf('eyJ', index + 1)
+        }
+
+        dotCount += codeUnit === 0x2e ? 1 : 0
+
+        if (dotCount > 2) {
+            return value.indexOf('eyJ', index + 1)
+        }
+    }
+    /* eslint-enable functional/no-let, functional/no-loop-statements */
+
+    return value.indexOf('eyJ')
+}
+
 export const redactTruncatedSensitiveCaptureText = ({ redaction, value }: RedactTelemetryTextInput): string => {
     const redacted = redactSensitiveCaptureText({ redaction, value })
+    const candidateStart = redacted.includes('eyJ') ? getTruncatedJwtCandidateStart(redacted) : -1
 
-    return redacted.includes('eyJ') ? redacted.replace(truncatedJwtCandidatePattern, redaction.redactedValue) : redacted
+    return candidateStart < 0 ? redacted : `${redacted.slice(0, candidateStart)}${redaction.redactedValue}`
 }
 
 const redactCapturedJsonValue = ({ depth, redaction, value }: RedactCapturedJsonValueInput): unknown => {

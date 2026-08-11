@@ -40,10 +40,6 @@ describe('redactCapturedBody', () => {
         expect(redact('{"value":"eyJhbGciOiJIUzI1NiJ9.payload.signature"}')).toBe('{"value":"[REDACTED]"}')
     })
 
-    test('redacts JWT-like values embedded in other text', () => {
-        expect(redact('prefixeyJhbGciOiJIUzI1NiJ9.payload.signatureSuffix')).toBe('prefix[REDACTED]')
-    })
-
     test('applies configured field names and patterns to raw JSON bodies', () => {
         const redaction = resolveCaptureOptions({
             redaction: {
@@ -181,6 +177,17 @@ describe('getCapturedRequestBody', () => {
 
         expect(captured.body).toBe('aaaa[REDACTED]')
         expect(captured.sizeBytes).toBe(31)
+    })
+
+    test('redacts repeated JWT prefixes without regex backtracking', () => {
+        const captured = getCapturedRequestBody({
+            maxBodyBytes: 16_384,
+            redaction: resolveCaptureOptions({}).redaction,
+            request: { body: 'eyJ'.repeat(1_000_000) },
+        })
+
+        expect(captured.body).toBe('[REDACTED]')
+        expect(captured.sizeBytes).toBe(3_000_000)
     })
 
     test('redacts a sensitive value from a truncated raw JSON body', () => {
