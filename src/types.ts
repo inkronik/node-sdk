@@ -62,7 +62,7 @@ export interface AutoInstrumentationOptions {
     readonly runtimeMetrics?: boolean | RuntimeMetricsOptions
 }
 
-export type InitInkronikOptions = CreateInkronikClientFromEnvOptions & {
+export interface InitInkronikOptions extends CreateInkronikClientFromEnvOptions {
     readonly instrumentations?: AutoInstrumentationOptions
 }
 
@@ -81,7 +81,13 @@ export type HttpRequestKind = 'http' | 'sse'
 
 export type CapturedResponseBodyMode = 'none' | 'raw' | 'sample'
 
-export type HttpBodySample = boolean | null | number | string | ReadonlyArray<HttpBodySample> | { readonly [key: string]: HttpBodySample }
+export type HttpBodySample = boolean | null | number | string | ReadonlyArray<HttpBodySample> | HttpBodySampleObject
+
+export interface HttpBodySampleObject {
+    readonly [key: string]: HttpBodySample
+}
+
+export type HttpBodySampleEntry = readonly [string, unknown]
 
 export interface CaptureRedactionOptions {
     readonly fieldNames?: ReadonlyArray<string>
@@ -114,10 +120,25 @@ export interface RedactCapturedBodyInput {
     readonly value: string
 }
 
+export interface RedactSerializedBodyInput extends RedactCapturedBodyInput {
+    readonly preserveRawStringSemantics: boolean
+}
+
 export interface GetRequestBodyInput {
     readonly maxBodyBytes: number
     readonly redaction: ResolvedCaptureRedactionOptions
     readonly request: HttpLikeRequest
+}
+
+export interface CapturedRequestBody {
+    readonly body: string
+    readonly sizeBytes: number
+}
+
+export interface AppendBodyChunkInput {
+    readonly chunk: unknown
+    readonly maxBytes: number
+    readonly value: string
 }
 
 export interface CaptureRequestResponseOptions {
@@ -139,10 +160,13 @@ export interface CaptureRequestResponseOptions {
     readonly metrics?: HttpMetricsOptions
 }
 
-export type ResolvedCaptureRequestResponseOptions = Omit<Required<CaptureRequestResponseOptions>, 'autoInstrumentFetch' | 'metrics' | 'redaction'> & {
+export interface ResolvedCaptureRequestResponseOverrides {
     readonly metrics: Required<HttpMetricsOptions>
     readonly redaction: ResolvedCaptureRedactionOptions
 }
+
+export type ResolvedCaptureRequestResponseOptions = Omit<Required<CaptureRequestResponseOptions>, 'autoInstrumentFetch' | 'metrics' | 'redaction'> &
+    ResolvedCaptureRequestResponseOverrides
 
 export interface HttpCaptureContext {
     readonly method: string
@@ -336,9 +360,11 @@ export interface BullMQInstrumentationOptions {
 }
 
 export interface BullMQQueueConstructor {
-    readonly prototype: {
-        add?: unknown
-    }
+    readonly prototype: BullMQQueuePrototype
+}
+
+export interface BullMQQueuePrototype {
+    add?: unknown
 }
 
 export interface InstrumentBullMQInput extends BullMQInstrumentationOptions {
@@ -371,11 +397,12 @@ export interface PostgresJsClientOptions {
     readonly database?: string
 }
 
-export type PostgresJsSql = ((strings: TemplateStringsArray, ...values: ReadonlyArray<unknown>) => unknown) & {
+export interface PostgresJsSql {
+    (strings: TemplateStringsArray, ...values: ReadonlyArray<unknown>): unknown
     readonly options?: PostgresJsClientOptions
 }
 
-export type InstrumentPostgresInput<TSql extends PostgresJsSql = PostgresJsSql> = DatabaseInstrumentationOptions & {
+export interface InstrumentPostgresInput<TSql extends PostgresJsSql = PostgresJsSql> extends DatabaseInstrumentationOptions {
     readonly sql: TSql
 }
 
@@ -396,10 +423,12 @@ export type PgQueryMethod = (...argumentsList: ReadonlyArray<unknown>) => unknow
 
 export interface PgQueryTarget {
     readonly database?: string
-    readonly options?: {
-        readonly database?: string
-    }
+    readonly options?: PgQueryTargetOptions
     readonly query?: PgQueryMethod
+}
+
+export interface PgQueryTargetOptions {
+    readonly database?: string
 }
 
 export interface PgConstructor {
@@ -428,9 +457,11 @@ export interface InstrumentedFetchOptions {
     readonly shouldTrace?: (input: RequestInfo | URL) => boolean
 }
 
-export type InstrumentedGlobalFetch = typeof fetch & {
+export interface InstrumentedFetchMarker {
     readonly [key: symbol]: typeof fetch | undefined
 }
+
+export type InstrumentedGlobalFetch = typeof fetch & InstrumentedFetchMarker
 
 export interface SendTelemetryInput {
     readonly signals: ReadonlyArray<IngestTelemetrySignal>
@@ -445,12 +476,16 @@ export interface HttpLikeRequest {
     readonly method?: string
     readonly url?: string
     readonly originalUrl?: string
-    readonly route?: { readonly path?: string }
+    readonly route?: HttpLikeRoute
     readonly headers?: Record<string, unknown>
     readonly query?: Record<string, unknown>
     readonly body?: unknown
     readonly user?: unknown
     readonly currentAccount?: unknown
+}
+
+export interface HttpLikeRoute {
+    readonly path?: string
 }
 
 export interface HttpLikeResponse {

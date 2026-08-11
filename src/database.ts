@@ -1,12 +1,11 @@
+import type { NormalizeDatabaseStatementInput } from './internal/types.js'
+
 const DEFAULT_DATABASE_STATEMENT_MAX_LENGTH = 2_000
 
 export const normalizeDatabaseStatement = ({
     maxLength = DEFAULT_DATABASE_STATEMENT_MAX_LENGTH,
     statement,
-}: {
-    readonly maxLength?: number
-    readonly statement: string
-}): string =>
+}: NormalizeDatabaseStatementInput): string =>
     statement
         .replace(/'([^']|'')*'/gu, '?')
         .replace(/\$\d+/gu, '?')

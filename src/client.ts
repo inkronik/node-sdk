@@ -1,6 +1,16 @@
 /* eslint-disable max-lines -- Split SDK instrumentation into modules in a dedicated refactor. */
 import { monitorEventLoopDelay } from 'node:perf_hooks'
 import type {
+    CaptureClientSpanInput,
+    CapturePostgresQueryInput,
+    CollectorTelemetryRequestInput,
+    InjectBullMQTraceparentInput,
+    PostgresQueryTraceState,
+    SeverityDefinition,
+    TracePostgresQueryInput,
+    UnversionedTelemetrySignal,
+} from './internal/types.js'
+import type {
     CaptureErrorOptions,
     CaptureEventSignalInput,
     CaptureHttpExchangeInput,
@@ -51,11 +61,6 @@ import {
     truncateUtf8,
 } from './utils.js'
 
-// Distributes over the signal union so each member loses `service_version` individually. A plain
-// Omit<IngestTelemetrySignal, 'service_version'> would instead collapse the union to its common keys and lose
-// every payload discriminant.
-type UnversionedTelemetrySignal = IngestTelemetrySignal extends unknown ? Omit<IngestTelemetrySignal, 'service_version'> : never
-
 // The resource-attribute key the k8s agent uses for the pod name. The SDK stamps the same key so the writer can
 // join an app's telemetry to the pod's deployed image.
 const POD_NAME_ATTRIBUTE = 'k8s.pod'
@@ -77,7 +82,7 @@ const DEFAULT_EVENT_LEVEL = 'info'
 const MAX_EVENT_MESSAGE_BYTES = 4096
 const emptyCapturedError = { type: '', message: '', stack: '', code: '', handled: false } as const
 
-const severityByLevel: Record<string, { readonly number: number; readonly text: string }> = {
+const severityByLevel: Record<string, SeverityDefinition> = {
     trace: { number: 1, text: 'TRACE' },
     debug: { number: 5, text: 'DEBUG' },
     info: { number: 9, text: 'INFO' },
@@ -99,7 +104,7 @@ const getFetchInputUrl = (input: RequestInfo | URL): string => {
     return input
 }
 
-const isCollectorTelemetryRequest = ({ collectorUrl, input }: { readonly collectorUrl: string; readonly input: RequestInfo | URL }): boolean => {
+const isCollectorTelemetryRequest = ({ collectorUrl, input }: CollectorTelemetryRequestInput): boolean => {
     try {
         return new URL(getFetchInputUrl(input)).toString().startsWith(`${collectorUrl}/v1/telemetry`)
     } catch {
@@ -118,7 +123,7 @@ const isFinallyCallback = (value: unknown): value is () => void => typeof value 
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 
-const getBullMQTraceparent = (job: { readonly data?: unknown }): string | undefined => {
+const getBullMQTraceparent = (job: BullMQJobLike): string | undefined => {
     if (!isRecord(job.data)) {
         return undefined
     }
@@ -128,7 +133,7 @@ const getBullMQTraceparent = (job: { readonly data?: unknown }): string | undefi
     return isRecord(metadata) && typeof metadata.traceparent === 'string' ? metadata.traceparent : undefined
 }
 
-const injectBullMQTraceparent = ({ data, traceparent }: { readonly data: unknown; readonly traceparent: string }): unknown => {
+const injectBullMQTraceparent = ({ data, traceparent }: InjectBullMQTraceparentInput): unknown => {
     if (!isRecord(data)) {
         return data
     }
@@ -190,10 +195,12 @@ export class InkronikClient {
     private readonly requestTimeoutMs: number
     private readonly fetchImpl: typeof fetch
     private readonly onError: (error: Error) => void
+    private readonly queueFullError: Error
     private readonly flushTimer: ReturnType<typeof setInterval>
     private runtimeMetricsTimer: ReturnType<typeof setInterval> | null = null
     private eventLoopMonitor: ReturnType<typeof monitorEventLoopDelay> | null = null
     private globalFetchRestore: (() => void) | null = null
+    private activeFlush: Promise<FlushResult> | null = null
     private queue: Array<IngestTelemetrySignal> = []
 
     constructor(options: InkronikClientOptions) {
@@ -209,6 +216,9 @@ export class InkronikClient {
         this.logRedaction = resolveLogRedactionOptions(options.logRedaction)
         this.maxBatchSize = Math.max(1, options.maxBatchSize ?? DEFAULT_BATCH_SIZE)
         this.maxQueueSize = Math.max(1, options.maxQueueSize ?? DEFAULT_MAX_QUEUE_SIZE)
+        this.queueFullError = new Error(
+            `Inkronik telemetry queue is full. Dropping the oldest signal to keep the queue bounded at ${this.maxQueueSize}.`,
+        )
         this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
         this.fetchImpl = options.fetchImpl ?? fetch
         this.onError = options.onError ?? (() => undefined)
@@ -216,6 +226,7 @@ export class InkronikClient {
             () => void this.flush().catch(error => this.handleError(error)),
             options.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS,
         )
+        this.flushTimer.unref()
     }
 
     log(input: LogInput): void {
@@ -491,6 +502,7 @@ export class InkronikClient {
         this.eventLoopMonitor = eventLoopMonitor
         // eslint-disable-next-line functional/immutable-data
         this.runtimeMetricsTimer = setInterval(() => this.emitRuntimeMetrics(), options.intervalMs ?? DEFAULT_RUNTIME_METRICS_INTERVAL_MS)
+        this.runtimeMetricsTimer.unref()
         this.emitRuntimeMetrics()
     }
 
@@ -517,18 +529,18 @@ export class InkronikClient {
             const parent = getCurrentTraceContext()
             const context = createChildTraceContext(parent)
             const startedAt = performance.now()
-            const request = new Request(input, init)
-            const headers = new Headers(request.headers)
+            const inheritedHeaders = input instanceof Request ? input.headers : undefined
+            const headers = new Headers(init?.headers ?? inheritedHeaders)
             headers.set('traceparent', toTraceparent(context))
-            const tracedRequest = new Request(request, { headers })
+            const tracedRequest = new Request(input, { ...init, headers })
+            const requestUrl = new URL(tracedRequest.url)
 
             try {
                 const response = await fetchImpl(tracedRequest)
-                const requestUrl = new URL(request.url)
                 this.captureClientSpan({
                     context,
                     durationMs: performance.now() - startedAt,
-                    method: request.method,
+                    method: tracedRequest.method,
                     peerService: options.getPeerService?.(input) ?? requestUrl.host,
                     statusCode: response.status,
                     url: requestUrl,
@@ -536,11 +548,10 @@ export class InkronikClient {
 
                 return response
             } catch (error) {
-                const requestUrl = new URL(request.url)
                 this.captureClientSpan({
                     context,
                     durationMs: performance.now() - startedAt,
-                    method: request.method,
+                    method: tracedRequest.method,
                     peerService: options.getPeerService?.(input) ?? requestUrl.host,
                     statusCode: 0,
                     url: requestUrl,
@@ -644,17 +655,7 @@ export class InkronikClient {
         const maxStatementLength = options.maxStatementLength ?? DEFAULT_DB_STATEMENT_MAX_LENGTH
         const prepareStatement = (statement: string): string =>
             captureStatement ? normalizeDatabaseStatement({ maxLength: maxStatementLength, statement }) : ''
-        const captureQuery = ({
-            error,
-            parentContext,
-            preparedStatement,
-            startedAt,
-        }: {
-            readonly error?: unknown
-            readonly parentContext: TraceContext
-            readonly preparedStatement: string
-            readonly startedAt: number
-        }): void => {
+        const captureQuery = ({ error, parentContext, preparedStatement, startedAt }: CapturePostgresQueryInput): void => {
             this.captureDatabaseQuery({
                 databaseName: options.databaseName,
                 durationMs: performance.now() - startedAt,
@@ -666,7 +667,7 @@ export class InkronikClient {
                 system: options.system,
             })
         }
-        const traceQuery = ({ query, statement }: { readonly query: unknown; readonly statement: string }): unknown => {
+        const traceQuery = ({ query, statement }: TracePostgresQueryInput): unknown => {
             const parentContext = getCurrentTraceContext()
             const preparedStatement = prepareStatement(statement)
 
@@ -694,7 +695,7 @@ export class InkronikClient {
                 )
             }
 
-            const state: { captured: boolean; startedAt: number | null } = {
+            const state: PostgresQueryTraceState = {
                 captured: false,
                 startedAt: null,
             }
@@ -1051,28 +1052,45 @@ export class InkronikClient {
     }
 
     async flush(): Promise<FlushResult> {
+        const activeFlush = this.activeFlush
+
+        if (activeFlush !== null) {
+            const currentResult = await activeFlush
+
+            if (this.queue.length === 0) {
+                return currentResult
+            }
+
+            const nextResult = await this.flush()
+
+            return {
+                accepted: currentResult.accepted + nextResult.accepted,
+                responses: [...currentResult.responses, ...nextResult.responses],
+            }
+        }
+
         if (this.queue.length === 0) {
             return { accepted: 0, responses: [] }
         }
 
-        const signals = this.queue
-        // eslint-disable-next-line functional/immutable-data
-        this.queue = []
-
-        const batches = this.chunk(signals)
-        const results = await Promise.allSettled(batches.map(batch => this.post({ signals: batch })))
-        const responses = results.flatMap(result => {
-            if (result.status === 'fulfilled') {
-                return [result.value]
+        const flushOperation = this.flushQueuedSignals()
+        // eslint-disable-next-line functional/immutable-data -- Single-flight state prevents concurrent collector payloads from accumulating.
+        this.activeFlush = flushOperation
+        const clearActiveFlush = (): void => {
+            if (this.activeFlush !== flushOperation) {
+                return
             }
 
-            this.handleError(result.reason)
+            // eslint-disable-next-line functional/immutable-data -- The completed operation must release its retained batch state.
+            this.activeFlush = null
 
-            return []
-        })
-        const accepted = responses.reduce((total, response) => total + response.accepted, 0)
+            if (this.queue.length >= this.maxBatchSize) {
+                void this.flush().catch(error => this.handleError(error))
+            }
+        }
+        void flushOperation.then(clearActiveFlush, clearActiveFlush)
 
-        return { accepted, responses }
+        return flushOperation
     }
 
     async shutdown(): Promise<FlushResult> {
@@ -1170,23 +1188,7 @@ export class InkronikClient {
         this.eventLoopMonitor?.reset()
     }
 
-    private captureClientSpan({
-        context,
-        durationMs,
-        error,
-        method,
-        peerService,
-        statusCode,
-        url,
-    }: {
-        readonly context: TraceContext
-        readonly durationMs: number
-        readonly error?: unknown
-        readonly method: string
-        readonly peerService: string
-        readonly statusCode: number
-        readonly url: URL
-    }): void {
+    private captureClientSpan({ context, durationMs, error, method, peerService, statusCode, url }: CaptureClientSpanInput): void {
         const hasError = statusCode >= 400 || error !== undefined
 
         this.enqueue({
@@ -1237,18 +1239,18 @@ export class InkronikClient {
         const signal = this.withPodName({ ...unversionedSignal, service_version: this.serviceVersion ?? '' } as IngestTelemetrySignal)
 
         if (this.queue.length >= this.maxQueueSize) {
-            this.handleError(
-                new Error(`Inkronik telemetry queue is full. Dropping the oldest signal to keep the queue bounded at ${this.maxQueueSize}.`),
-            )
+            this.handleError(this.queueFullError)
+            // Queue mutation is intentional: copying every pending signal makes overload handling quadratic.
             // eslint-disable-next-line functional/immutable-data
-            this.queue = [...this.queue.slice(1), signal]
-        } else {
-            // eslint-disable-next-line functional/immutable-data
-            this.queue = [...this.queue, signal]
+            this.queue.shift()
         }
 
-        if (this.queue.length >= this.maxBatchSize) {
-            this.flush().catch(error => this.handleError(error))
+        // Queue mutation is intentional: the queue is private bounded state.
+        // eslint-disable-next-line functional/immutable-data
+        this.queue.push(signal)
+
+        if (this.queue.length >= this.maxBatchSize && this.activeFlush === null) {
+            void this.flush().catch(error => this.handleError(error))
         }
     }
 
@@ -1272,16 +1274,33 @@ export class InkronikClient {
         } as IngestTelemetrySignal
     }
 
-    private chunk(signals: ReadonlyArray<IngestTelemetrySignal>): Array<Array<IngestTelemetrySignal>> {
-        return signals.reduce<Array<Array<IngestTelemetrySignal>>>((batches, signal) => {
-            const lastBatch = batches.at(-1)
+    private async flushQueuedSignals(): Promise<FlushResult> {
+        const responses: Array<IngestTelemetryResponse> = []
 
-            if (lastBatch === undefined || lastBatch.length >= this.maxBatchSize) {
-                return [...batches, [signal]]
+        // One batch may be in flight at a time. Together with maxQueueSize this bounds retained telemetry
+        // even when the collector is slow or unavailable.
+        // eslint-disable-next-line functional/no-loop-statements
+        while (this.queue.length > 0) {
+            // Dequeuing is private bounded queue state and avoids rebuilding the remaining queue per batch.
+            // eslint-disable-next-line functional/immutable-data
+            const signals = this.queue.splice(0, this.maxBatchSize)
+            const response = await this.post({ signals }).catch(error => {
+                this.handleError(error)
+
+                return undefined
+            })
+
+            if (response !== undefined) {
+                // The response count is bounded by maxQueueSize / maxBatchSize for a single drain.
+                // eslint-disable-next-line functional/immutable-data
+                responses.push(response)
             }
+        }
 
-            return [...batches.slice(0, -1), [...lastBatch, signal]]
-        }, [])
+        return {
+            accepted: responses.reduce((total, response) => total + response.accepted, 0),
+            responses,
+        }
     }
 
     private async post(payload: IngestTelemetryRequest): Promise<IngestTelemetryResponse> {

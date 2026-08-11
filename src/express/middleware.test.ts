@@ -198,6 +198,8 @@ describe('createInkronikExpressMiddleware', () => {
         const { client, requests } = createTestClient()
         const request = createRequest()
         const { response } = createResponse()
+        const originalWrite = response.write
+        const originalEnd = response.end
         const middleware = createInkronikExpressMiddleware({
             client,
             options: {
@@ -218,6 +220,8 @@ describe('createInkronikExpressMiddleware', () => {
         expect(capture?.payload.request_body).toBe('{"include":"items"}')
         expect(capture?.payload.response_body).toBe('hello world')
         expect(signals.find(signal => signal.payload.metric_name === 'http.server.response.size')?.payload.value).toBe(11)
+        expect(response.write).toBe(originalWrite)
+        expect(response.end).toBe(originalEnd)
     })
 
     test('redacts nested request and raw response body secrets before sending telemetry', async () => {

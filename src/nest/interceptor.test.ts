@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, mock, test } from 'bun:test'
 import { lastValueFrom, Observable, of, throwError } from 'rxjs'
 import { BadRequestException, type CallHandler, type ExecutionContext } from '@nestjs/common'
 import { InkronikClient } from '../client.js'
@@ -177,6 +177,38 @@ describe('InkronikNestInterceptor', () => {
         const capture = signals.find(signal => signal.signal_type === 'request_response_capture')
 
         expect(capture?.payload.response_body).toBe('{"ok":true}')
+    })
+
+    test('uses Content-Length without serializing a sampled response', async () => {
+        const { client, requests } = createTestClient()
+        const request = createRequest()
+        const { response } = createResponse()
+        const interceptor = new InkronikNestInterceptor(client)
+        const toJSON = mock(() => ({ materialized: 'must-not-be-created' }))
+        const next: CallHandler = { handle: () => of({ ok: true, toJSON }) }
+
+        response.setHeader('content-length', '123456')
+        await lastValueFrom(interceptor.intercept(createExecutionContext({ request, response }), next))
+        await client.shutdown()
+
+        const signals = getSignals(requests[0] as SentRequest)
+
+        expect(toJSON).not.toHaveBeenCalled()
+        expect(signals.find(signal => signal.payload.metric_name === 'http.server.response.size')?.payload.value).toBe(123456)
+    })
+
+    test('serializes a captured request only once for its body and size', async () => {
+        const { client } = createTestClient()
+        const toJSON = mock(() => ({ sku: 'sku_456' }))
+        const request = { ...createRequest(), body: { toJSON } }
+        const { response } = createResponse()
+        const interceptor = new InkronikNestInterceptor(client)
+        const next: CallHandler = { handle: () => of({ ok: true }) }
+
+        await lastValueFrom(interceptor.intercept(createExecutionContext({ request, response }), next))
+        await client.shutdown()
+
+        expect(toJSON).toHaveBeenCalledTimes(1)
     })
 
     test('redacts nested request and raw response body secrets before sending telemetry', async () => {

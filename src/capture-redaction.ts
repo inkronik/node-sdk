@@ -1,4 +1,5 @@
-import type { RedactCapturedBodyInput, RedactTelemetryTextInput, ResolvedCaptureRedactionOptions } from './types.js'
+import type { RedactCapturedJsonValueInput, SensitiveCaptureFieldInput } from './internal/types.js'
+import type { RedactCapturedBodyInput, RedactSerializedBodyInput, RedactTelemetryTextInput } from './types.js'
 import { truncateUtf8 } from './utils.js'
 
 const DEFAULT_MAX_CAPTURE_REDACTION_DEPTH = 32
@@ -56,8 +57,11 @@ const defaultSensitiveFieldFragments: ReadonlyArray<string> = [
     'session',
     'cookie',
 ]
-const textAssignmentPattern = /(["']?([a-z0-9_.-]+)["']?(?:\s*[:=]\s*["']?|%3d))(?!\/\/)((?:(?!%26)[^&\s,"'}])+)/giu
+const defaultSensitiveFieldCandidatePattern =
+    /password|passwd|passphrase|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|jwt|credential|signature|session|cookie|authorization|card|cvv|cvc|ssn/iu
+const textAssignmentPattern = /(^|[^a-z0-9_.-])(["']?([a-z0-9_.-]+)["']?(?:\s*[:=]\s*["']?|%3d))(?!\/\/)((?:(?!%26)[^&\s,"'}])+)/giu
 const jwtPattern = /\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/gu
+const encodedAssignmentPattern = /%3d/iu
 
 const normalizeSensitiveFieldName = (name: string): string =>
     name
@@ -65,47 +69,33 @@ const normalizeSensitiveFieldName = (name: string): string =>
         .replaceAll(/[^a-z0-9]+/g, '_')
         .replaceAll(/^_+|_+$/g, '')
 
+const defaultSensitiveFieldNameSet = new Set(defaultSensitiveFieldNames.map(normalizeSensitiveFieldName))
+
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 
-export const isSensitiveCaptureField = ({
-    key,
-    redaction,
-}: {
-    readonly key: string
-    readonly redaction: ResolvedCaptureRedactionOptions
-}): boolean => {
+export const isSensitiveCaptureField = ({ key, redaction }: SensitiveCaptureFieldInput): boolean => {
     const normalizedKey = normalizeSensitiveFieldName(key)
-    const sensitiveNames = [...defaultSensitiveFieldNames, ...redaction.fieldNames].map(normalizeSensitiveFieldName)
 
     return (
-        sensitiveNames.includes(normalizedKey) ||
+        defaultSensitiveFieldNameSet.has(normalizedKey) ||
+        redaction.fieldNames.some(name => normalizeSensitiveFieldName(name) === normalizedKey) ||
         defaultSensitiveFieldFragments.some(fragment => normalizedKey.includes(fragment)) ||
         redaction.fieldPatterns.some(pattern => new RegExp(pattern.source, pattern.flags).test(key))
     )
 }
 
-export const redactSensitiveCaptureText = ({
-    redaction,
-    value,
-}: {
-    readonly redaction: ResolvedCaptureRedactionOptions
-    readonly value: string
-}): string =>
-    value
-        .replaceAll(textAssignmentPattern, (match, prefix: string, key: string) =>
-            isSensitiveCaptureField({ key, redaction }) ? `${prefix}${redaction.redactedValue}` : match,
-        )
-        .replaceAll(jwtPattern, redaction.redactedValue)
+export const redactSensitiveCaptureText = ({ redaction, value }: RedactTelemetryTextInput): string => {
+    const hasAssignment = value.includes('=') || value.includes(':') || encodedAssignmentPattern.test(value)
+    const assignmentRedacted = hasAssignment
+        ? value.replaceAll(textAssignmentPattern, (match, boundary: string, prefix: string, key: string) =>
+              isSensitiveCaptureField({ key, redaction }) ? `${boundary}${prefix}${redaction.redactedValue}` : match,
+          )
+        : value
 
-const redactCapturedJsonValue = ({
-    depth,
-    redaction,
-    value,
-}: {
-    readonly depth: number
-    readonly redaction: ResolvedCaptureRedactionOptions
-    readonly value: unknown
-}): unknown => {
+    return assignmentRedacted.includes('eyJ') ? assignmentRedacted.replaceAll(jwtPattern, redaction.redactedValue) : assignmentRedacted
+}
+
+const redactCapturedJsonValue = ({ depth, redaction, value }: RedactCapturedJsonValueInput): unknown => {
     if (depth >= DEFAULT_MAX_CAPTURE_REDACTION_DEPTH) {
         return redaction.redactedValue
     }
@@ -132,6 +122,54 @@ const redactCapturedJsonValue = ({
     )
 }
 
+const hasDeepJsonStructure = (value: string): boolean => {
+    /* eslint-disable functional/no-let, functional/no-loop-statements -- Streaming syntax inspection avoids parsing and copying a large body. */
+    let depth = 0
+    let escaped = false
+    let inString = false
+
+    for (let index = 0; index < value.length; index += 1) {
+        const codeUnit = value.charCodeAt(index)
+        const wasEscaped = escaped
+
+        if (wasEscaped) {
+            escaped = false
+        }
+
+        const beginsEscape = !wasEscaped && codeUnit === 0x5c && inString
+
+        if (beginsEscape) {
+            escaped = true
+        }
+
+        const togglesString = !wasEscaped && !beginsEscape && codeUnit === 0x22
+
+        if (togglesString) {
+            inString = !inString
+        }
+
+        const isStructuralCharacter = !wasEscaped && !beginsEscape && !togglesString && !inString
+        const opensContainer = isStructuralCharacter && (codeUnit === 0x7b || codeUnit === 0x5b)
+
+        if (opensContainer) {
+            depth += 1
+
+            if (depth >= DEFAULT_MAX_CAPTURE_REDACTION_DEPTH) {
+                return true
+            }
+        }
+
+        const closesContainer = isStructuralCharacter && (codeUnit === 0x7d || codeUnit === 0x5d)
+
+        if (closesContainer) {
+            depth -= 1
+        }
+    }
+    /* eslint-enable functional/no-let, functional/no-loop-statements */
+
+    return false
+}
+
 export const redactTelemetryText = ({ redaction, value }: RedactTelemetryTextInput): string => {
     try {
         return JSON.stringify(redactCapturedJsonValue({ depth: 0, redaction, value: JSON.parse(value) as unknown }))
@@ -142,3 +180,22 @@ export const redactTelemetryText = ({ redaction, value }: RedactTelemetryTextInp
 
 export const redactCapturedBody = ({ maxBytes, redaction, value }: RedactCapturedBodyInput): string =>
     truncateUtf8({ maxBytes, value: redactTelemetryText({ redaction, value }) })
+
+export const redactSerializedBody = ({ maxBytes, preserveRawStringSemantics, redaction, value }: RedactSerializedBodyInput): string => {
+    if (preserveRawStringSemantics) {
+        return redactCapturedBody({ maxBytes, redaction, value })
+    }
+
+    const requiresStructuredRedaction =
+        hasDeepJsonStructure(value) ||
+        defaultSensitiveFieldCandidatePattern.test(value) ||
+        value.includes('eyJ') ||
+        redaction.fieldNames.length > 0 ||
+        redaction.fieldPatterns.length > 0
+
+    if (requiresStructuredRedaction) {
+        return redactCapturedBody({ maxBytes, redaction, value })
+    }
+
+    return truncateUtf8({ maxBytes, value })
+}

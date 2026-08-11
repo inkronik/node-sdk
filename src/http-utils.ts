@@ -1,8 +1,25 @@
 import type {
+    BuildCaptureContextInput,
+    GetBoundedObjectEntriesInput,
+    GetCompleteUtf8PrefixInput,
+    GetHttpBodySampleInput,
+    GetHttpHeaderValueInput,
+    GetRequestRouteInput,
+    GetResponseTypeHeadersInput,
+    GetSerializedHttpBodySampleInput,
+    HasHeaderValueInput,
+    MergeObjectSamplesInput,
+    ResolveCapturedResponseHeadersInput,
+    ResponseBodyTypeHeadersInput,
+    SanitizeSampleStringInput,
+} from './internal/types.js'
+import type {
+    AppendBodyChunkInput,
     BuildRequestTelemetryContextInput,
     CaptureRequestResponseOptions,
-    CapturedResponseBodyMode,
+    CapturedRequestBody,
     HttpBodySample,
+    HttpBodySampleEntry,
     HttpCaptureContext,
     HttpLikeRequest,
     HttpLikeResponse,
@@ -11,12 +28,11 @@ import type {
     InstrumentedFetchOptions,
     GetRequestBodyInput,
     ResolvedCaptureRequestResponseOptions,
-    ResolvedCaptureRedactionOptions,
     ResolveHttpMessageSizeInput,
 } from './types.js'
 import { createRootTraceContext, parseTraceparent } from './trace-context.js'
-import { isSensitiveCaptureField, redactCapturedBody, redactSensitiveCaptureText } from './capture-redaction.js'
-import { safeJsonStringify, toStringMap, utf8ByteLength } from './utils.js'
+import { isSensitiveCaptureField, redactSensitiveCaptureText, redactSerializedBody } from './capture-redaction.js'
+import { safeJsonByteLength, safeJsonStringify, toStringMap, truncateUtf8, utf8ByteLength } from './utils.js'
 
 const DEFAULT_MAX_BODY_BYTES = 16_384
 const DEFAULT_MAX_BODY_SAMPLE_DEPTH = 5
@@ -71,8 +87,7 @@ export const getRequestMethod = (request: HttpLikeRequest): string => (request.m
 
 export const getRequestUrl = (request: HttpLikeRequest): string => request.originalUrl ?? request.url ?? ''
 
-export const getRequestRoute = ({ request, url }: { readonly request: HttpLikeRequest; readonly url: string }): string =>
-    normalizeHttpRoute(request.route?.path ?? url)
+export const getRequestRoute = ({ request, url }: GetRequestRouteInput): string => normalizeHttpRoute(request.route?.path ?? url)
 
 export const getRequestHeaders = (request: HttpLikeRequest): Record<string, string> => toStringMap(request.headers)
 
@@ -130,30 +145,16 @@ export const getResponseHeaders = (response: HttpLikeResponse): Record<string, s
 export const getRequestUserId = (request: HttpLikeRequest): string =>
     defaultRequestUserContainers.map(container => getUserContextId(request[container])).find(userId => userId.length > 0) ?? ''
 
-export const getHttpHeaderValue = ({ headers, name }: { readonly headers: Record<string, string>; readonly name: string }): string =>
+export const getHttpHeaderValue = ({ headers, name }: GetHttpHeaderValueInput): string =>
     Object.entries(headers).find(([headerName]) => headerName.toLowerCase() === name.toLowerCase())?.[1] ?? ''
 
-const withResponseBodyTypeHeader = ({
-    bodyMode,
-    headers,
-    responseBodyType,
-}: {
-    readonly bodyMode: CapturedResponseBodyMode
-    readonly headers: Record<string, string>
-    readonly responseBodyType: string
-}): Record<string, string> => ({
+const withResponseBodyTypeHeader = ({ bodyMode, headers, responseBodyType }: ResponseBodyTypeHeadersInput): Record<string, string> => ({
     ...headers,
     ...(bodyMode === 'none' ? {} : { [RESPONSE_BODY_MODE_HEADER]: bodyMode }),
     ...(responseBodyType === '' ? {} : { [RESPONSE_BODY_TYPE_HEADER]: responseBodyType }),
 })
 
-export const getResponseTypeHeaders = ({
-    headers,
-    responseBodyType,
-}: {
-    readonly headers: Record<string, string>
-    readonly responseBodyType: string
-}): Record<string, string> => {
+export const getResponseTypeHeaders = ({ headers, responseBodyType }: GetResponseTypeHeadersInput): Record<string, string> => {
     const contentType = getHttpHeaderValue({ headers, name: 'content-type' })
 
     return {
@@ -169,12 +170,7 @@ export const resolveCapturedResponseHeaders = ({
     headers,
     responseBodyType,
     shouldCaptureRawResponse,
-}: {
-    readonly bodyMode: CapturedResponseBodyMode
-    readonly headers: Record<string, string>
-    readonly responseBodyType: string
-    readonly shouldCaptureRawResponse: boolean
-}): Record<string, string> =>
+}: ResolveCapturedResponseHeadersInput): Record<string, string> =>
     shouldCaptureRawResponse
         ? withResponseBodyTypeHeader({ bodyMode, headers, responseBodyType })
         : {
@@ -227,53 +223,108 @@ export const getSerializedResponseBodyType = (value: string): string => {
 const truncateSampleString = (value: string): string =>
     value.length > DEFAULT_MAX_BODY_SAMPLE_STRING_LENGTH ? `${value.slice(0, 5)}...${value.slice(-5)}` : value
 
-const sanitizeSampleString = ({ redaction, value }: { readonly redaction: ResolvedCaptureRedactionOptions; readonly value: string }): string =>
+const sanitizeSampleString = ({ redaction, value }: SanitizeSampleStringInput): string =>
     truncateSampleString(redactSensitiveCaptureText({ redaction, value }))
 
-const mergeObjectSamples = ({
-    depth,
-    redaction,
-    values,
-}: {
-    readonly depth: number
-    readonly redaction: ResolvedCaptureRedactionOptions
-    readonly values: ReadonlyArray<Record<string, unknown>>
-}): HttpBodySample =>
-    Object.fromEntries(
-        Array.from(new Set(values.flatMap(value => Object.keys(value))))
-            .slice(0, DEFAULT_MAX_BODY_SAMPLE_KEYS)
-            .map(key => {
-                const childValue = values.map(value => value[key]).find(value => value !== undefined)
+const getBoundedObjectEntries = ({ maxEntries, value }: GetBoundedObjectEntriesInput): ReadonlyArray<HttpBodySampleEntry> => {
+    const entries: Array<HttpBodySampleEntry> = []
 
-                return [
-                    key,
-                    isSensitiveCaptureField({ key, redaction })
-                        ? redaction.redactedValue
-                        : getHttpBodySample({ depth: depth + 1, redaction, value: childValue }),
-                ]
-            }),
+    // Only sampled fields are read. Object.entries would materialize and access every property first.
+    // eslint-disable-next-line functional/no-loop-statements
+    for (const key in value) {
+        if (Object.hasOwn(value, key)) {
+            // Bounded sampler state is intentionally mutable to avoid rebuilding the prefix per key.
+            // eslint-disable-next-line functional/immutable-data
+            entries.push([key, value[key]])
+
+            if (entries.length >= maxEntries) {
+                break
+            }
+        }
+    }
+
+    return entries
+}
+
+const getMergedSampleKeys = (values: ReadonlyArray<Readonly<Record<string, unknown>>>): ReadonlyArray<string> => {
+    const keys: Array<string> = []
+    const seenKeys = new Set<string>()
+    const appendKey = (key: string): boolean => {
+        if (seenKeys.has(key)) {
+            return false
+        }
+
+        // Both collections are bounded by the sample key limit.
+        // eslint-disable-next-line functional/immutable-data
+        seenKeys.add(key)
+        // eslint-disable-next-line functional/immutable-data
+        keys.push(key)
+
+        return keys.length >= DEFAULT_MAX_BODY_SAMPLE_KEYS
+    }
+    const appendKeys = (value: Readonly<Record<string, unknown>>): void => {
+        // eslint-disable-next-line functional/no-loop-statements
+        for (const key in value) {
+            if (Object.hasOwn(value, key) && appendKey(key)) {
+                return
+            }
+        }
+    }
+
+    // eslint-disable-next-line functional/no-loop-statements
+    for (const value of values) {
+        appendKeys(value)
+
+        if (keys.length >= DEFAULT_MAX_BODY_SAMPLE_KEYS) {
+            return keys
+        }
+    }
+
+    return keys
+}
+
+const mergeObjectSamples = ({ depth, redaction, values }: MergeObjectSamplesInput): HttpBodySample =>
+    Object.fromEntries(
+        getMergedSampleKeys(values).map(key => {
+            const childValue = values.map(value => value[key]).find(value => value !== undefined)
+
+            return [
+                key,
+                isSensitiveCaptureField({ key, redaction })
+                    ? redaction.redactedValue
+                    : getHttpBodySample({ depth: depth + 1, redaction, value: childValue }),
+            ]
+        }),
     )
 
-export const getHttpBodySample = ({
-    depth = 0,
-    redaction,
-    value,
-}: {
-    readonly depth?: number
-    readonly redaction: ResolvedCaptureRedactionOptions
-    readonly value: unknown
-}): HttpBodySample => {
+export const getHttpBodySample = ({ depth = 0, redaction, value }: GetHttpBodySampleInput): HttpBodySample => {
     if (depth >= DEFAULT_MAX_BODY_SAMPLE_DEPTH) {
         return getResponseBodyType(value)
     }
 
     if (Array.isArray(value)) {
-        const objectItems = value.filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null && !Array.isArray(item))
+        const objectItems: Array<Record<string, unknown>> = []
+
+        // A representative sample needs at most five object shapes. Stopping there avoids retaining a second
+        // array proportional to a potentially very large response.
+        // eslint-disable-next-line functional/no-loop-statements
+        for (const arrayItem of value as ReadonlyArray<unknown>) {
+            const item = arrayItem
+
+            if (typeof item === 'object' && item !== null && !Array.isArray(item)) {
+                // eslint-disable-next-line functional/immutable-data -- The bounded five-item sample avoids a full-array allocation.
+                objectItems.push(item as Record<string, unknown>)
+            }
+
+            if (objectItems.length === 5) {
+                break
+            }
+        }
 
         if (objectItems.length > 0) {
             return value.length > 1
-                ? [mergeObjectSamples({ depth, redaction, values: objectItems.slice(0, 5) }), '...']
-                : [mergeObjectSamples({ depth, redaction, values: objectItems.slice(0, 5) })]
+                ? [mergeObjectSamples({ depth, redaction, values: objectItems }), '...']
+                : [mergeObjectSamples({ depth, redaction, values: objectItems })]
         }
 
         const firstItem = value.find(item => item !== undefined)
@@ -284,14 +335,14 @@ export const getHttpBodySample = ({
 
     if (typeof value === 'object' && value !== null) {
         return Object.fromEntries(
-            Object.entries(value)
-                .slice(0, DEFAULT_MAX_BODY_SAMPLE_KEYS)
-                .map(([key, childValue]) => [
+            getBoundedObjectEntries({ maxEntries: DEFAULT_MAX_BODY_SAMPLE_KEYS, value: value as Readonly<Record<string, unknown>> }).map(
+                ([key, childValue]) => [
                     key,
                     isSensitiveCaptureField({ key, redaction })
                         ? redaction.redactedValue
                         : getHttpBodySample({ depth: depth + 1, redaction, value: childValue }),
-                ]),
+                ],
+            ),
         )
     }
 
@@ -306,13 +357,7 @@ export const getHttpBodySample = ({
     return getResponseBodyType(value)
 }
 
-export const getSerializedHttpBodySample = ({
-    redaction,
-    value,
-}: {
-    readonly redaction: ResolvedCaptureRedactionOptions
-    readonly value: string
-}): HttpBodySample | undefined => {
+export const getSerializedHttpBodySample = ({ redaction, value }: GetSerializedHttpBodySampleInput): HttpBodySample | undefined => {
     const trimmed = value.trim()
 
     if (trimmed.length === 0) {
@@ -340,15 +385,8 @@ export const getHttpContentLength = (headers: Record<string, string>): number | 
     return Number.isFinite(value) && value >= 0 ? value : undefined
 }
 
-const hasHeaderValue = ({
-    expected,
-    headers,
-    name,
-}: {
-    readonly expected: string
-    readonly headers: Record<string, string>
-    readonly name: string
-}): boolean => getHttpHeaderValue({ headers, name }).toLowerCase().includes(expected)
+const hasHeaderValue = ({ expected, headers, name }: HasHeaderValueInput): boolean =>
+    getHttpHeaderValue({ headers, name }).toLowerCase().includes(expected)
 
 export const acceptsEventStream = (request: HttpLikeRequest): boolean =>
     getHttpHeaderValue({ headers: getRequestHeaders(request), name: 'accept' })
@@ -366,10 +404,25 @@ export const inferHttpRequestKind = (context: HttpCaptureContext): HttpRequestKi
     return 'http'
 }
 
-export const getRequestBody = ({ maxBodyBytes, redaction, request }: GetRequestBodyInput): string =>
-    redactCapturedBody({ maxBytes: maxBodyBytes, redaction, value: safeJsonStringify(request.body) })
+export const getCapturedRequestBody = ({ maxBodyBytes, redaction, request }: GetRequestBodyInput): CapturedRequestBody => {
+    const serialized = safeJsonStringify(request.body)
 
-export const getRequestBodySizeBytes = (request: HttpLikeRequest): number => utf8ByteLength(safeJsonStringify(request.body))
+    return {
+        body: redactSerializedBody({
+            maxBytes: maxBodyBytes,
+            preserveRawStringSemantics: typeof request.body === 'string',
+            redaction,
+            value: serialized,
+        }),
+        sizeBytes: utf8ByteLength(serialized),
+    }
+}
+
+export const getRequestBody = (input: GetRequestBodyInput): string => getCapturedRequestBody(input).body
+
+export const getRequestBodySizeBytes = (request: HttpLikeRequest): number => safeJsonByteLength(request.body)
+
+export const getResponseBodySizeBytes = safeJsonByteLength
 
 export const getBodyChunkSizeBytes = (chunk: unknown): number => {
     if (chunk === undefined || chunk === null) {
@@ -391,16 +444,75 @@ export const getBodyChunkSizeBytes = (chunk: unknown): number => {
     return 0
 }
 
+const getUtf8SequenceLength = (leadingByte: number): number => {
+    if (leadingByte <= 0x7f) {
+        return 1
+    }
+
+    if (leadingByte >= 0xc0 && leadingByte <= 0xdf) {
+        return 2
+    }
+
+    if (leadingByte >= 0xe0 && leadingByte <= 0xef) {
+        return 3
+    }
+
+    return leadingByte >= 0xf0 && leadingByte <= 0xf7 ? 4 : 1
+}
+
+const getCompleteUtf8Prefix = ({ bytes, maxBytes }: GetCompleteUtf8PrefixInput): Uint8Array => {
+    const boundedEnd = Math.min(bytes.byteLength, maxBytes)
+
+    if (boundedEnd === 0 || boundedEnd === bytes.byteLength) {
+        return bytes.subarray(0, boundedEnd)
+    }
+
+    /* eslint-disable functional/no-let, functional/no-loop-statements -- Inspecting the bounded UTF-8 suffix avoids copying the chunk. */
+    let sequenceStart = boundedEnd - 1
+
+    // At most three continuation bytes can precede a UTF-8 boundary.
+    while (sequenceStart > 0 && (bytes[sequenceStart] ?? 0) >= 0x80 && (bytes[sequenceStart] ?? 0) <= 0xbf) {
+        sequenceStart -= 1
+    }
+    /* eslint-enable functional/no-let, functional/no-loop-statements */
+
+    const availableSequenceBytes = boundedEnd - sequenceStart
+    const expectedSequenceBytes = getUtf8SequenceLength(bytes[sequenceStart] ?? 0)
+    const completeEnd = availableSequenceBytes < expectedSequenceBytes ? sequenceStart : boundedEnd
+
+    return bytes.subarray(0, completeEnd)
+}
+
+export const appendBodyChunk = ({ chunk, maxBytes, value }: AppendBodyChunkInput): string => {
+    const remainingBytes = maxBytes - utf8ByteLength(value)
+
+    if (remainingBytes <= 0 || chunk === undefined || chunk === null) {
+        return value
+    }
+
+    const chunkValue = (() => {
+        if (typeof chunk === 'string') {
+            return chunk
+        }
+
+        if (chunk instanceof Uint8Array) {
+            return new TextDecoder().decode(getCompleteUtf8Prefix({ bytes: chunk, maxBytes: remainingBytes }))
+        }
+
+        if (chunk instanceof ArrayBuffer) {
+            return new TextDecoder().decode(getCompleteUtf8Prefix({ bytes: new Uint8Array(chunk), maxBytes: remainingBytes }))
+        }
+
+        return ''
+    })()
+
+    return `${value}${truncateUtf8({ maxBytes: remainingBytes, value: chunkValue })}`
+}
+
 export const resolveHttpMessageSize = ({ body = '', explicitSizeBytes, headers }: ResolveHttpMessageSizeInput): number =>
     explicitSizeBytes ?? getHttpContentLength(headers) ?? utf8ByteLength(body)
 
-export const buildCaptureContext = ({
-    request,
-    response,
-}: {
-    readonly request: HttpLikeRequest
-    readonly response: HttpLikeResponse
-}): HttpCaptureContext => {
+export const buildCaptureContext = ({ request, response }: BuildCaptureContextInput): HttpCaptureContext => {
     const url = getRequestUrl(request)
 
     return {
@@ -468,16 +580,4 @@ export const resolveAutoInstrumentFetchOptions = (
     }
 
     return option
-}
-
-export const toBodyChunk = (chunk: unknown): string => {
-    if (typeof chunk === 'string') {
-        return chunk
-    }
-
-    if (chunk instanceof Uint8Array) {
-        return new TextDecoder().decode(chunk)
-    }
-
-    return ''
 }
