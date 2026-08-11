@@ -2,7 +2,7 @@ import type { RedactCapturedJsonValueInput, SensitiveCaptureFieldInput } from '.
 import type { RedactCapturedBodyInput, RedactSerializedBodyInput, RedactTelemetryTextInput } from './types.js'
 import { truncateUtf8 } from './utils.js'
 
-const DEFAULT_MAX_CAPTURE_REDACTION_DEPTH = 32
+export const MAX_CAPTURE_REDACTION_DEPTH = 32
 const defaultSensitiveFieldNames: ReadonlyArray<string> = [
     'authorization',
     'proxy-authorization',
@@ -96,7 +96,7 @@ export const redactSensitiveCaptureText = ({ redaction, value }: RedactTelemetry
 }
 
 const redactCapturedJsonValue = ({ depth, redaction, value }: RedactCapturedJsonValueInput): unknown => {
-    if (depth >= DEFAULT_MAX_CAPTURE_REDACTION_DEPTH) {
+    if (depth >= MAX_CAPTURE_REDACTION_DEPTH) {
         return redaction.redactedValue
     }
 
@@ -154,7 +154,7 @@ const hasDeepJsonStructure = (value: string): boolean => {
         if (opensContainer) {
             depth += 1
 
-            if (depth >= DEFAULT_MAX_CAPTURE_REDACTION_DEPTH) {
+            if (depth >= MAX_CAPTURE_REDACTION_DEPTH) {
                 return true
             }
         }

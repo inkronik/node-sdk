@@ -18,6 +18,7 @@ const scenarios = [
     'request-5mb',
     'request-20mb',
     'request-30mb',
+    'request-sensitive-30mb',
     'request-object-500k',
     'request-multibyte-20mb',
     'response-sample-100k',
@@ -95,6 +96,18 @@ const runScenario = (scenario: (typeof scenarios)[number]): MemoryBenchmarkResul
 
     if (scenario === 'request-30mb') {
         return measureRequest({ multibyte: false, sizeMb: 30 })
+    }
+
+    if (scenario === 'request-sensitive-30mb') {
+        return measureMemory({
+            scenario,
+            setup: () => ({ body: { accessToken: 'x'.repeat(30 * MEBIBYTE) } }),
+            operation: request => {
+                const captured = getCapturedRequestBody({ maxBodyBytes: MAX_BODY_BYTES, redaction: options.redaction, request })
+
+                return { capturedBytes: utf8ByteLength(captured.body), requestSizeBytes: captured.sizeBytes }
+            },
+        })
     }
 
     if (scenario === 'request-multibyte-20mb') {

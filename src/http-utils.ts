@@ -31,8 +31,9 @@ import type {
     ResolveHttpMessageSizeInput,
 } from './types.js'
 import { createRootTraceContext, parseTraceparent } from './trace-context.js'
-import { isSensitiveCaptureField, redactSensitiveCaptureText, redactSerializedBody } from './capture-redaction.js'
-import { safeJsonByteLength, safeJsonStringify, toStringMap, truncateUtf8, utf8ByteLength } from './utils.js'
+import { isSensitiveCaptureField, redactSensitiveCaptureText } from './capture-redaction.js'
+import { captureBodyValue } from './capture-serializer.js'
+import { safeJsonByteLength, toStringMap, truncateUtf8, utf8ByteLength } from './utils.js'
 
 const DEFAULT_MAX_BODY_BYTES = 16_384
 const DEFAULT_MAX_BODY_SAMPLE_DEPTH = 5
@@ -404,19 +405,8 @@ export const inferHttpRequestKind = (context: HttpCaptureContext): HttpRequestKi
     return 'http'
 }
 
-export const getCapturedRequestBody = ({ maxBodyBytes, redaction, request }: GetRequestBodyInput): CapturedRequestBody => {
-    const serialized = safeJsonStringify(request.body)
-
-    return {
-        body: redactSerializedBody({
-            maxBytes: maxBodyBytes,
-            preserveRawStringSemantics: typeof request.body === 'string',
-            redaction,
-            value: serialized,
-        }),
-        sizeBytes: utf8ByteLength(serialized),
-    }
-}
+export const getCapturedRequestBody = ({ maxBodyBytes, redaction, request }: GetRequestBodyInput): CapturedRequestBody =>
+    captureBodyValue({ maxBodyBytes, redaction, value: request.body })
 
 export const getRequestBody = (input: GetRequestBodyInput): string => getCapturedRequestBody(input).body
 
