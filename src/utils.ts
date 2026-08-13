@@ -190,7 +190,17 @@ export const normalizeCapturedError = (error: unknown): CapturedError => {
 export const getUserEventAttributes = (user: EventUserContext | undefined): Record<string, string> =>
     Object.fromEntries(Object.entries(user?.attributes ?? {}).map(([key, value]) => [`user.${key}`, value]))
 
-export const normalizeCollectorUrl = (collectorUrl: string): string => collectorUrl.replaceAll(/\/+$/g, '')
+export const normalizeCollectorUrl = (collectorUrl: string): string => {
+    /* eslint-disable functional/no-let, functional/no-loop-statements -- A reverse linear scan avoids regex backtracking on configuration input. */
+    let end = collectorUrl.length
+
+    while (end > 0 && collectorUrl.charCodeAt(end - 1) === 0x2f) {
+        end -= 1
+    }
+    /* eslint-enable functional/no-let, functional/no-loop-statements */
+
+    return collectorUrl.slice(0, end)
+}
 
 export const toStringMap = (value: Record<string, unknown> | undefined): Record<string, string> =>
     Object.fromEntries(

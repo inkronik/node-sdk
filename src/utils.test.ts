@@ -1,5 +1,24 @@
 import { describe, expect, test } from 'bun:test'
-import { safeJsonByteLength, safeJsonStringify, sortNumbers, truncateUtf8, utf8ByteLength } from './utils.js'
+import { normalizeCollectorUrl, safeJsonByteLength, safeJsonStringify, sortNumbers, truncateUtf8, utf8ByteLength } from './utils.js'
+
+describe('normalizeCollectorUrl', () => {
+    test.each([
+        { value: 'https://collector.example.com', expected: 'https://collector.example.com' },
+        { value: 'https://collector.example.com///', expected: 'https://collector.example.com' },
+        { value: '///', expected: '' },
+        { value: '', expected: '' },
+    ])('removes trailing slashes from $value', ({ expected, value }) => {
+        expect(normalizeCollectorUrl(value)).toBe(expected)
+    })
+
+    test('handles an adversarial trailing-slash run in linear time', () => {
+        const value = `${'/'.repeat(100_000)}x`
+        const startedAt = performance.now()
+
+        expect(normalizeCollectorUrl(value)).toBe(value)
+        expect(performance.now() - startedAt).toBeLessThan(100)
+    })
+})
 
 describe('sortNumbers', () => {
     test('sorts numerically without mutating the input', () => {

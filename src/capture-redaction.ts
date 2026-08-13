@@ -63,11 +63,13 @@ const textAssignmentPattern = /(^|[^a-z0-9_.-])(["']?([a-z0-9_.-]+)["']?(?:\s*[:
 const jwtPattern = /\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/gu
 const encodedAssignmentPattern = /%3d/iu
 
-const normalizeSensitiveFieldName = (name: string): string =>
-    name
-        .toLowerCase()
-        .replaceAll(/[^a-z0-9]+/g, '_')
-        .replaceAll(/^_+|_+$/g, '')
+const normalizeSensitiveFieldName = (name: string): string => {
+    const normalized = name.toLowerCase().replaceAll(/[^a-z0-9]+/g, '_')
+    // The replacement above collapses every separator run, so each edge can contain at most one underscore.
+    const withoutLeadingSeparator = normalized.startsWith('_') ? normalized.slice(1) : normalized
+
+    return withoutLeadingSeparator.endsWith('_') ? withoutLeadingSeparator.slice(0, -1) : withoutLeadingSeparator
+}
 
 const defaultSensitiveFieldNameSet = new Set(defaultSensitiveFieldNames.map(normalizeSensitiveFieldName))
 
