@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test'
-import { redactCapturedBody, redactSensitiveCaptureText, redactSerializedBody } from './capture-redaction.js'
+import { isSensitiveCaptureField, redactCapturedBody, redactSensitiveCaptureText, redactSerializedBody } from './capture-redaction.js'
 import { appendBodyChunk, getCapturedRequestBody, getHttpBodySample, resolveCaptureOptions } from './http-utils.js'
 import { safeJsonStringify, utf8ByteLength } from './utils.js'
 
@@ -11,6 +11,13 @@ const redact = (value: string): string =>
     })
 
 describe('redactCapturedBody', () => {
+    test('normalizes field separators without a backtracking expression', () => {
+        const redaction = resolveCaptureOptions({}).redaction
+
+        expect(isSensitiveCaptureField({ key: '---Access___Token---', redaction })).toBe(true)
+        expect(isSensitiveCaptureField({ key: '---safe___field---', redaction })).toBe(false)
+    })
+
     test('handles large plain strings in linear time without changing them', () => {
         const value = 'x'.repeat(1_000_000)
         const redaction = resolveCaptureOptions({}).redaction
