@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Integrate Inkronik Node SDK'
+  short_description: 'Instrument a Node service with Inkronik'
+  default_prompt: 'Use $integrate-inkronik-node-sdk to instrument this service and verify HTTP, user, background-job, and database telemetry.'

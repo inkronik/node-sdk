@@ -10,6 +10,7 @@ const consumerDirectory = await mkdtemp(join(tmpdir(), 'inkronik-node-sdk-legacy
 const packagePath = join(consumerDirectory, 'node_modules', '@inkronik', 'node-sdk')
 const typescriptPath = join(projectDirectory, 'node_modules', 'typescript', 'bin', 'tsc')
 const consumerSource = `
+import '@inkronik/node-sdk/init'
 import { getDefaultInkronikClient, type InkronikClient } from '@inkronik/node-sdk'
 import { initInkronik } from '@inkronik/node-sdk/auto'
 import { createInkronikExpressMiddleware } from '@inkronik/node-sdk/express'

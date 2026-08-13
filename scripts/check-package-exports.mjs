@@ -20,7 +20,12 @@ runtimeExports.forEach(({ expectedExport, name }) => {
     assert.equal(typeof loadedModule[expectedExport], 'function', `${specifier} did not expose ${expectedExport} through require()`)
 })
 
-assert.match(require.resolve('@inkronik/node-sdk/register'), /\.cjs$/u, 'register did not resolve to CommonJS')
+const commonJsInitPath = require.resolve('@inkronik/node-sdk/init')
+const commonJsRegisterPath = require.resolve('@inkronik/node-sdk/register')
+
+assert.match(commonJsInitPath, /\.cjs$/u, 'init did not resolve to CommonJS')
+assert.match(commonJsRegisterPath, /\.cjs$/u, 'register did not resolve to CommonJS')
+assert.equal(commonJsInitPath, commonJsRegisterPath, 'init and register did not resolve to the same initialization module')
 
 const commonJsAutoPath = require.resolve('@inkronik/node-sdk/auto')
 const commonJsAutoSource = await readFile(commonJsAutoPath, 'utf8')

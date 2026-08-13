@@ -112,7 +112,31 @@ stack, and string code when available; it does not turn a successful request spa
 Inside Express or NestJS request instrumentation, events automatically inherit the active trace, span, session, and user ID. Configure
 `getUserContext` on the adapter when events also need safe user attributes. An explicit event `user` overrides the inherited request user.
 
-## Agent Preload
+## Initialization
+
+For environment-based configuration, add Inkronik as the first application import:
+
+```ts
+import '@inkronik/node-sdk/init'
+
+import { NestFactory } from '@nestjs/core'
+import { AppModule } from './app.module.js'
+```
+
+Environment or secrets loaders may run before Inkronik when they provide its configuration:
+
+```ts
+import 'dotenv/config'
+import '@inkronik/node-sdk/init'
+```
+
+This initializes the default client, starts runtime metrics, and instruments global `fetch`, `pg`, and integrations loaded later. The
+application start command does not need to change. Keep the Inkronik import ahead of framework, database, queue, and application imports.
+
+### Full Postgres.js auto-instrumentation
+
+Static Postgres.js imports are resolved before application imports execute. Bun therefore needs the preload hook to instrument
+Postgres.js or Drizzle using the `postgres-js` driver transparently.
 
 Load Inkronik before the application entrypoint:
 
@@ -127,13 +151,13 @@ export const inkronik = initInkronik()
 bun --preload ./inkronik-trace.ts src/main.ts
 ```
 
-For env-only setup, preload the register entrypoint directly:
+For environment-only setup, preload the init entrypoint directly:
 
 ```bash
-bun --preload @inkronik/node-sdk/register src/main.ts
+bun --preload @inkronik/node-sdk/init src/main.ts
 ```
 
-The preload agent initializes the default client, starts runtime metrics, and instruments global `fetch`, Postgres.js, and `pg` before application code runs.
+The existing `@inkronik/node-sdk/register` entrypoint remains available as a backwards-compatible alias.
 
 Use `instrumentFetch()` or `instrumentGlobalFetch()` in standalone Node processes. Express and NestJS adapters enable global `fetch`
 instrumentation by default, so outbound `fetch` calls made while handling a request appear as child `client` spans and propagate
@@ -208,10 +232,11 @@ global `fetch`.
 
 ## PostgreSQL
 
-The preload agent automatically instruments both supported PostgreSQL drivers:
+The SDK supports two PostgreSQL drivers with different initialization requirements:
 
-- `postgres` for Postgres.js and Drizzle;
-- `pg` for TypeORM, direct `Client` queries, and direct `Pool` queries.
+- `pg` works with import-first initialization for TypeORM, Drizzle's `node-postgres` driver, direct `Client` queries, and direct `Pool`
+  queries;
+- `postgres` works transparently with Bun preload for Postgres.js and Drizzle's `postgres-js` driver.
 
 TypeORM does not need Inkronik-specific database configuration. Its existing `pg` client and pool queries become child `database` spans under the active request trace.
 
@@ -256,7 +281,7 @@ initInkronik({
 // Use `postgres: false` to disable automatic Postgres.js instrumentation.
 ```
 
-Automatic module loading currently targets Bun. When running without the Bun preload agent, use the manual API:
+Transparent Postgres.js module loading currently targets Bun preload. When running without it, use the manual API:
 
 ```ts
 import postgres from 'postgres'
@@ -280,7 +305,32 @@ Use `redaction.fieldNames` and `redaction.fieldPatterns` to add application-spec
 
 The NestJS interceptor also captures the Observable error path automatically. `HttpException` responses such as 400 validation errors retain their HTTP status and public response body. Other thrown values are recorded as 500 responses. Every response with status 400 or higher is marked as a failed request; thrown errors additionally attach their bounded type, message, code, and stack trace to the server span. The original exception continues through NestJS unchanged, so existing exception filters keep working without application-level Inkronik code.
 
-Framework adapters resolve the trace user id from `request.user` or `request.currentAccount` by default, preferring `uuid`, then `id`. Pass `getUserId` when your authentication context uses a different shape.
+Framework adapters resolve common trace user IDs from `request.user` or `request.currentAccount` by default. Fields outside the recognized
+set, such as `userUUID`, require an explicit resolver. Configure `getUserContext` as well when correlated events need safe user attributes:
+
+```ts
+import type { EventUserContext, HttpLikeRequest } from '@inkronik/node-sdk'
+
+const getUserContext = (request: HttpLikeRequest): EventUserContext | undefined => {
+    const account = request.currentAccount as { readonly role?: string; readonly uuid?: string } | undefined
+
+    if (account?.uuid === undefined || account.uuid === '') {
+        return undefined
+    }
+
+    return {
+        id: account.uuid,
+        attributes: account.role === undefined ? {} : { role: account.role },
+    }
+}
+
+new InkronikNestInterceptor(inkronik, { getUserContext })
+```
+
+The same option is available under `options` in `createInkronikExpressMiddleware`. The resolver runs lazily, so authentication middleware
+or guards can attach the principal after tracing starts. Return only a stable user ID and allowlisted, non-sensitive string attributes;
+do not copy tokens, authorization headers, or arbitrary principal fields into telemetry. Authenticated integration tests should verify
+`user.id` on the server span and inherited `user_id` on events emitted inside the request.
 
 Exclude health checks, metrics endpoints, or other requests before tracing:
 
