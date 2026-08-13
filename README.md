@@ -72,6 +72,24 @@ inkronik.startRuntimeMetrics()
 const tracedFetch = inkronik.instrumentFetch()
 ```
 
+Use `withSpan()` to trace work that does not begin with an incoming request, such as a cron run, startup task, or application-level operation:
+
+```ts
+const reconciled = await inkronik.withSpan({
+    name: 'billing.reconcile',
+    category: 'scheduled',
+    attributes: {
+        'job.schedule': '0 * * * *',
+    },
+    callback: () => reconcileBilling(),
+})
+```
+
+The operation becomes a root span when no trace is active and a child span otherwise. Its callback runs inside the active Inkronik trace context,
+so instrumented `fetch`, PostgreSQL queries, logs, events, and nested `withSpan()` calls remain correlated. Synchronous return values and promises are
+preserved; thrown errors and rejected promises mark the span as failed and are rethrown unchanged. Manual spans default to the `internal` kind and
+category. Short-lived processes such as Kubernetes CronJobs should call `await inkronik.shutdown()` before exiting so queued telemetry is flushed.
+
 Log messages, log attributes, and log resource attributes are redacted in the SDK before they are queued. Sensitive keys such as
 `setupToken`, `access_token`, `password`, and `authorization` are replaced with `[REDACTED]` by default, including when they appear in a
 JSON-formatted message. Add application-specific keys or patterns, change the replacement, or explicitly disable log redaction when creating
@@ -158,6 +176,28 @@ const app = await NestFactory.create(AppModule, { bufferLogs: true })
 
 app.use(createInkronikNestMiddleware({ client: inkronik }))
 ```
+
+Scheduled Nest methods can use the `@InkronikSpan()` decorator. It uses the process-level default client configured by
+`createInkronikClientFromEnv()` or `initInkronik()`:
+
+```ts
+import { Cron, CronExpression } from '@nestjs/schedule'
+import { InkronikSpan } from '@inkronik/node-sdk/nest'
+
+export class BillingScheduler {
+    @Cron(CronExpression.EVERY_HOUR)
+    @InkronikSpan({
+        name: 'billing.reconcile',
+        category: 'scheduled',
+        attributes: { 'job.schedule': 'hourly' },
+    })
+    async reconcile(): Promise<void> {
+        await reconcileBilling()
+    }
+}
+```
+
+The decorator preserves existing method metadata, arguments, `this`, return values, and errors, so it can be combined with Nest scheduling decorators.
 
 The middleware covers responses produced before interceptors run, including guard failures, unmatched routes, and request parser errors.
 The interceptor keeps framework exception details and stack traces for controller and pipe failures. Both adapters share request state, so a

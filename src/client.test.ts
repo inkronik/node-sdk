@@ -2,6 +2,7 @@
 import { describe, expect, test } from 'bun:test'
 import { InkronikClient } from './client.js'
 import { createInkronikClientFromEnv } from './env.js'
+import type { IngestTelemetrySignal } from './protocol/types.js'
 import { runWithTraceContext } from './trace-context.js'
 
 interface PostgresJsSqlTestDouble {
@@ -50,6 +51,14 @@ const createTelemetryFetch = ({ accepted = 1, applicationId = 'application-regre
     }) as typeof fetch
 
     return { fetchImpl, requests }
+}
+
+const getTelemetrySignals = (request: FetchRequest): ReadonlyArray<IngestTelemetrySignal> => {
+    if (typeof request.init?.body !== 'string') {
+        throw new Error('Expected collector request body')
+    }
+
+    return (JSON.parse(request.init.body) as { readonly signals: ReadonlyArray<IngestTelemetrySignal> }).signals
 }
 
 const hasPostgresQueryValues = (value: unknown): value is { readonly values: () => PostgresJsQueryTestDouble } =>
@@ -464,6 +473,140 @@ describe('InkronikClient', () => {
         const offCluster = await podSignals({ env: { INKRONIK_SERVICE_NAME: 'orders-api', HOSTNAME: 'my-laptop' } })
 
         expect(offCluster.find(signal => signal.signal_type === 'log')?.payload.resource_attributes?.['k8s.pod']).toBeUndefined()
+    })
+
+    test('traces scheduled work as a root span and correlates child telemetry', async () => {
+        const { fetchImpl, requests } = createTelemetryFetch({ accepted: 4 })
+        const client = new InkronikClient({
+            collectorUrl: 'http://collector:4000',
+            ingestApiKey: 'ik_live_prefix_secret',
+            applicationId: 'application-regression',
+            serviceName: 'billing-worker',
+            defaultAttributes: { region: 'eu-central-1' },
+            fetchImpl,
+            flushIntervalMs: 60_000,
+        })
+        const tracedFetch = client.instrumentFetch({
+            fetchImpl: ((input: RequestInfo | URL, init?: RequestInit) => {
+                void input
+                void init
+
+                return Promise.resolve(new Response(null, { status: 204 }))
+            }) as typeof fetch,
+        })
+
+        const result = await client.withSpan({
+            name: 'billing.reconcile',
+            category: 'scheduled',
+            attributes: { 'job.schedule': '0 * * * *' },
+            resourceAttributes: { worker: 'billing' },
+            callback: async () => {
+                client.captureLoggerRecord({ level: 'info', message: 'Reconciling billing records' })
+                client.captureDatabaseQuery({ durationMs: 2, operation: 'SELECT', peerService: 'postgres' })
+                await tracedFetch('https://payments.example.com/reconcile')
+
+                return 42
+            },
+        })
+
+        expect(result).toBe(42)
+        await client.shutdown()
+
+        const signals = getTelemetrySignals(requests[0] as FetchRequest)
+        const spans = signals.filter(signal => signal.signal_type === 'span')
+        const rootSpan = spans.find(signal => signal.payload.operation_name === 'billing.reconcile')
+        const databaseSpan = spans.find(signal => signal.payload.span_category === 'database')
+        const httpSpan = spans.find(signal => signal.payload.span_category === 'http')
+        const log = signals.find(signal => signal.signal_type === 'log')
+
+        expect(rootSpan?.payload).toMatchObject({
+            parent_span_id: '',
+            operation_name: 'billing.reconcile',
+            span_kind: 'internal',
+            span_category: 'scheduled',
+            status_code: 'ok',
+            has_error: false,
+            resource_attributes: { worker: 'billing' },
+            span_attributes: { 'job.schedule': '0 * * * *' },
+        })
+        expect(rootSpan?.attributes).toEqual({ region: 'eu-central-1', 'job.schedule': '0 * * * *' })
+        expect(databaseSpan?.payload).toMatchObject({
+            trace_id: rootSpan?.payload.trace_id,
+            parent_span_id: rootSpan?.payload.span_id,
+        })
+        expect(httpSpan?.payload).toMatchObject({
+            trace_id: rootSpan?.payload.trace_id,
+            parent_span_id: rootSpan?.payload.span_id,
+        })
+        expect(log?.payload).toMatchObject({
+            trace_id: rootSpan?.payload.trace_id,
+            span_id: rootSpan?.payload.span_id,
+        })
+    })
+
+    test('preserves synchronous results and nests manual spans', async () => {
+        const { fetchImpl, requests } = createTelemetryFetch({ accepted: 2 })
+        const client = new InkronikClient({
+            collectorUrl: 'http://collector:4000',
+            ingestApiKey: 'ik_live_prefix_secret',
+            serviceName: 'billing-worker',
+            fetchImpl,
+            flushIntervalMs: 60_000,
+        })
+
+        const result = client.withSpan({
+            name: 'billing.reconcile',
+            callback: () => client.withSpan({ name: 'billing.load-rates', callback: () => 'complete' }),
+        })
+
+        expect(result).toBe('complete')
+        await client.shutdown()
+
+        const spans = getTelemetrySignals(requests[0] as FetchRequest).filter(signal => signal.signal_type === 'span')
+        const rootSpan = spans.find(signal => signal.payload.operation_name === 'billing.reconcile')
+        const childSpan = spans.find(signal => signal.payload.operation_name === 'billing.load-rates')
+
+        expect(rootSpan?.payload.parent_span_id).toBe('')
+        expect(childSpan?.payload).toMatchObject({
+            trace_id: rootSpan?.payload.trace_id,
+            parent_span_id: rootSpan?.payload.span_id,
+        })
+    })
+
+    test('records rejected work as an error span and preserves the rejection', async () => {
+        const { fetchImpl, requests } = createTelemetryFetch()
+        const client = new InkronikClient({
+            collectorUrl: 'http://collector:4000',
+            ingestApiKey: 'ik_live_prefix_secret',
+            serviceName: 'billing-worker',
+            fetchImpl,
+            flushIntervalMs: 60_000,
+        })
+        const failure = new Error('Reconciliation failed')
+        const rejected = client.withSpan({
+            name: 'billing.reconcile',
+            category: 'scheduled',
+            callback: () => Promise.reject(failure),
+        })
+
+        const capturedFailure: unknown = await rejected.catch((error: unknown): unknown => error)
+
+        expect(capturedFailure).toBe(failure)
+        await client.shutdown()
+
+        const span = getTelemetrySignals(requests[0] as FetchRequest).find(signal => signal.signal_type === 'span')
+
+        expect(span?.payload).toMatchObject({
+            operation_name: 'billing.reconcile',
+            status_code: 'error',
+            status_message: 'Reconciliation failed',
+            has_error: true,
+            span_attributes: {
+                'error.type': 'Error',
+                'error.message': 'Reconciliation failed',
+                'error.handled': 'false',
+            },
+        })
     })
 
     test('captures outbound fetch as a child client span with trace propagation', async () => {

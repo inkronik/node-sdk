@@ -294,3 +294,14 @@ export interface CaptureClientSpanInput {
     readonly statusCode: number
     readonly url: URL
 }
+
+export interface CaptureFunctionSpanInput {
+    readonly attributes?: Record<string, string>
+    readonly category: string
+    readonly context: TraceContext
+    readonly durationMs: number
+    readonly error?: unknown
+    readonly kind: string
+    readonly name: string
+    readonly resourceAttributes?: Record<string, string>
+}

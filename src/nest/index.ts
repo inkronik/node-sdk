@@ -1,4 +1,5 @@
 export * from './interceptor.js'
 export * from './logger.js'
 export * from './middleware.js'
+export * from './span.js'
 export type * from './types.js'
