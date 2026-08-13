@@ -2,6 +2,7 @@
 import { monitorEventLoopDelay } from 'node:perf_hooks'
 import type {
     CaptureClientSpanInput,
+    CaptureFunctionSpanInput,
     CapturePostgresQueryInput,
     CollectorTelemetryRequestInput,
     InjectBullMQTraceparentInput,
@@ -36,6 +37,7 @@ import type {
     SumInput,
     PostgresJsSql,
     TraceContext,
+    WithSpanInput,
 } from './types.js'
 import type { IngestTelemetryRequest, IngestTelemetryResponse, IngestTelemetrySignal } from './protocol/types.js'
 import { getDatabaseOperation, normalizeDatabaseStatement } from './database.js'
@@ -79,6 +81,8 @@ const INKRONIK_INSTRUMENTED_POSTGRES = Symbol.for('inkronik.instrumentedPostgres
 const INKRONIK_TRACE_METADATA_KEY = '__inkronik'
 const DEFAULT_MESSAGING_SYSTEM = 'bullmq'
 const DEFAULT_EVENT_LEVEL = 'info'
+const DEFAULT_FUNCTION_SPAN_CATEGORY = 'internal'
+const DEFAULT_FUNCTION_SPAN_KIND = 'internal'
 const MAX_EVENT_MESSAGE_BYTES = 4096
 const emptyCapturedError = { type: '', message: '', stack: '', code: '', handled: false } as const
 
@@ -120,6 +124,9 @@ const isTemplateStringsArray = (value: unknown): value is TemplateStringsArray =
 const isPromiseCallback = (value: unknown): value is (value: unknown) => unknown => typeof value === 'function'
 
 const isFinallyCallback = (value: unknown): value is () => void => typeof value === 'function'
+
+const isPromiseLike = (value: unknown): value is PromiseLike<unknown> =>
+    (typeof value === 'object' || typeof value === 'function') && value !== null && typeof Reflect.get(value, 'then') === 'function'
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 
@@ -488,6 +495,49 @@ export class InkronikClient {
                 ...errorAttributes,
             },
         })
+    }
+
+    withSpan<TResult>(input: WithSpanInput<TResult>): TResult {
+        const context = createChildTraceContext(getCurrentTraceContext())
+        const startedAt = performance.now()
+        const capture = (error?: unknown): void => {
+            this.captureFunctionSpan({
+                attributes: input.attributes,
+                category: input.category ?? DEFAULT_FUNCTION_SPAN_CATEGORY,
+                context,
+                durationMs: performance.now() - startedAt,
+                error,
+                kind: input.kind ?? DEFAULT_FUNCTION_SPAN_KIND,
+                name: input.name,
+                resourceAttributes: input.resourceAttributes,
+            })
+        }
+        const result = runWithTraceContext(context, () => {
+            try {
+                return input.callback()
+            } catch (error) {
+                capture(error)
+                throw error
+            }
+        })
+
+        if (!isPromiseLike(result)) {
+            capture()
+
+            return result
+        }
+
+        return Promise.resolve(result).then(
+            value => {
+                capture()
+
+                return value
+            },
+            error => {
+                capture(error)
+                throw error
+            },
+        ) as TResult
     }
 
     startRuntimeMetrics(options: RuntimeMetricsOptions = {}): void {
@@ -1225,6 +1275,55 @@ export class InkronikClient {
                     'http.url': url.toString(),
                     'peer.service': peerService,
                 },
+            },
+        })
+    }
+
+    private captureFunctionSpan(input: CaptureFunctionSpanInput): void {
+        const capturedError = input.error === undefined ? undefined : normalizeCapturedError(input.error)
+        const hasError = capturedError !== undefined
+        const errorAttributes: Record<string, string> =
+            capturedError === undefined
+                ? {}
+                : {
+                      'error.type': capturedError.type,
+                      'error.message': capturedError.message,
+                      'error.stack': capturedError.stack,
+                      'error.code': capturedError.code,
+                      'error.handled': 'false',
+                  }
+        const spanAttributes = {
+            ...(input.attributes ?? {}),
+            ...errorAttributes,
+        }
+
+        this.enqueue({
+            signal_type: 'span',
+            environment: this.environment,
+            timestamp: new Date(Date.now() - input.durationMs).toISOString(),
+            source: this.source,
+            attributes: mergeAttributes({ defaults: this.defaultAttributes, overrides: input.attributes }),
+            payload: {
+                trace_id: input.context.traceId,
+                span_id: input.context.spanId,
+                parent_span_id: input.context.parentSpanId,
+                end_time: nowIso(),
+                duration_us: Math.max(0, Math.round(input.durationMs * 1000)),
+                service_name: this.serviceName,
+                operation_name: input.name,
+                span_kind: input.kind,
+                span_category: input.category,
+                status_code: hasError ? 'error' : 'ok',
+                status_message: capturedError?.message ?? '',
+                has_error: hasError,
+                http_method: '',
+                http_route: '',
+                http_status_code: 0,
+                db_system: '',
+                messaging_system: '',
+                peer_service: '',
+                resource_attributes: input.resourceAttributes ?? {},
+                span_attributes: spanAttributes,
             },
         })
     }

@@ -1,6 +1,21 @@
 import type { LoggerService } from '@nestjs/common'
 import type { InkronikClient } from '../client.js'
-import type { HttpLikeRequest, HttpLikeResponse, TelemetryContext, TraceContext } from '../types.js'
+import type { HttpLikeRequest, HttpLikeResponse, TelemetryContext, TraceContext, WithSpanInput } from '../types.js'
+
+export type InkronikSpanOptions = Omit<WithSpanInput<unknown>, 'callback'>
+
+export type InkronikDecoratedMethod = (this: unknown, ...argumentsList: ReadonlyArray<unknown>) => unknown
+
+export interface CopyMethodMetadataInput {
+    readonly source: InkronikDecoratedMethod
+    readonly target: InkronikDecoratedMethod
+}
+
+export interface ReflectMetadataApi {
+    readonly defineMetadata?: (metadataKey: unknown, metadataValue: unknown, target: object) => void
+    readonly getOwnMetadata?: (metadataKey: unknown, target: object) => unknown
+    readonly getOwnMetadataKeys?: (target: object) => ReadonlyArray<unknown>
+}
 
 export interface InkronikNestLoggerOptions {
     readonly client: InkronikClient

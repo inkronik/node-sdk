@@ -210,6 +210,15 @@ export interface TraceContext {
     readonly parentSpanId: string
 }
 
+export interface WithSpanInput<TResult> {
+    readonly name: string
+    readonly callback: () => TResult
+    readonly kind?: string
+    readonly category?: string
+    readonly attributes?: Record<string, string>
+    readonly resourceAttributes?: Record<string, string>
+}
+
 export interface HttpRequestInstrumentationState {
     captured: boolean
     readonly traceContext: TraceContext
