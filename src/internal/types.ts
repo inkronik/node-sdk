@@ -40,12 +40,7 @@ export interface NormalizeDatabaseStatementInput {
 export type RequiredEnvKey = 'INKRONIK_COLLECTOR_URL' | 'INKRONIK_INGEST_API_KEY'
 
 export type EnvKey =
-    | RequiredEnvKey
-    | 'INKRONIK_APPLICATION_ID'
-    | 'INKRONIK_SERVICE_VERSION'
-    | 'INKRONIK_POD_NAME'
-    | 'HOSTNAME'
-    | 'KUBERNETES_SERVICE_HOST'
+    RequiredEnvKey | 'INKRONIK_APPLICATION_ID' | 'INKRONIK_SERVICE_VERSION' | 'INKRONIK_POD_NAME' | 'HOSTNAME' | 'KUBERNETES_SERVICE_HOST'
 
 export interface ReadEnvValueInput {
     readonly env: Record<string, string | undefined>
