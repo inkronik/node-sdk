@@ -305,7 +305,32 @@ Use `redaction.fieldNames` and `redaction.fieldPatterns` to add application-spec
 
 The NestJS interceptor also captures the Observable error path automatically. `HttpException` responses such as 400 validation errors retain their HTTP status and public response body. Other thrown values are recorded as 500 responses. Every response with status 400 or higher is marked as a failed request; thrown errors additionally attach their bounded type, message, code, and stack trace to the server span. The original exception continues through NestJS unchanged, so existing exception filters keep working without application-level Inkronik code.
 
-Framework adapters resolve the trace user id from `request.user` or `request.currentAccount` by default, preferring `uuid`, then `id`. Pass `getUserId` when your authentication context uses a different shape.
+Framework adapters resolve common trace user IDs from `request.user` or `request.currentAccount` by default. Fields outside the recognized
+set, such as `userUUID`, require an explicit resolver. Configure `getUserContext` as well when correlated events need safe user attributes:
+
+```ts
+import type { EventUserContext, HttpLikeRequest } from '@inkronik/node-sdk'
+
+const getUserContext = (request: HttpLikeRequest): EventUserContext | undefined => {
+    const account = request.currentAccount as { readonly role?: string; readonly uuid?: string } | undefined
+
+    if (account?.uuid === undefined || account.uuid === '') {
+        return undefined
+    }
+
+    return {
+        id: account.uuid,
+        attributes: account.role === undefined ? {} : { role: account.role },
+    }
+}
+
+new InkronikNestInterceptor(inkronik, { getUserContext })
+```
+
+The same option is available under `options` in `createInkronikExpressMiddleware`. The resolver runs lazily, so authentication middleware
+or guards can attach the principal after tracing starts. Return only a stable user ID and allowlisted, non-sensitive string attributes;
+do not copy tokens, authorization headers, or arbitrary principal fields into telemetry. Authenticated integration tests should verify
+`user.id` on the server span and inherited `user_id` on events emitted inside the request.
 
 Exclude health checks, metrics endpoints, or other requests before tracing:
 
