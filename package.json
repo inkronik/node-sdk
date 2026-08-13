@@ -10,6 +10,9 @@
       "auto": [
         "dist/auto.d.ts"
       ],
+      "init": [
+        "dist/register.d.ts"
+      ],
       "express": [
         "dist/express/index.d.ts"
       ],
@@ -64,6 +67,17 @@
       },
       "default": "./dist/express/index.js"
     },
+    "./init": {
+      "import": {
+        "types": "./dist/register.d.ts",
+        "default": "./dist/register.js"
+      },
+      "require": {
+        "types": "./dist/cjs/register.d.cts",
+        "default": "./dist/cjs/register.cjs"
+      },
+      "default": "./dist/register.js"
+    },
     "./nest": {
       "import": {
         "types": "./dist/nest/index.d.ts",
@@ -100,7 +114,7 @@
     "check:exports": "node scripts/check-package-exports.mjs",
     "check:format": "prettier --check .",
     "check:lint": "eslint src scripts/*.ts --max-warnings 0",
-    "check:runtime": "node scripts/check-package-runtime.mjs cjs && node scripts/check-package-runtime.mjs esm && bun scripts/check-package-runtime.mjs cjs && bun scripts/check-package-runtime.mjs esm",
+    "check:runtime": "node scripts/check-package-runtime.mjs cjs && node scripts/check-package-runtime.mjs esm && bun scripts/check-package-runtime.mjs cjs && bun scripts/check-package-runtime.mjs esm && node scripts/check-package-init-runtime.mjs cjs && node scripts/check-package-init-runtime.mjs esm && bun scripts/check-package-init-runtime.mjs cjs && bun scripts/check-package-init-runtime.mjs esm",
     "check:types:consumers": "bun tsc --noEmit --project scripts/fixtures/tsconfig.package-consumers.json && node scripts/check-legacy-types.mjs",
     "pack:check": "npm pack --dry-run",
     "release:version": "release-it --release-version --ci",

@@ -112,7 +112,31 @@ stack, and string code when available; it does not turn a successful request spa
 Inside Express or NestJS request instrumentation, events automatically inherit the active trace, span, session, and user ID. Configure
 `getUserContext` on the adapter when events also need safe user attributes. An explicit event `user` overrides the inherited request user.
 
-## Agent Preload
+## Initialization
+
+For environment-based configuration, add Inkronik as the first application import:
+
+```ts
+import '@inkronik/node-sdk/init'
+
+import { NestFactory } from '@nestjs/core'
+import { AppModule } from './app.module.js'
+```
+
+Environment or secrets loaders may run before Inkronik when they provide its configuration:
+
+```ts
+import 'dotenv/config'
+import '@inkronik/node-sdk/init'
+```
+
+This initializes the default client, starts runtime metrics, and instruments global `fetch`, `pg`, and integrations loaded later. The
+application start command does not need to change. Keep the Inkronik import ahead of framework, database, queue, and application imports.
+
+### Full Postgres.js auto-instrumentation
+
+Static Postgres.js imports are resolved before application imports execute. Bun therefore needs the preload hook to instrument
+Postgres.js or Drizzle using the `postgres-js` driver transparently.
 
 Load Inkronik before the application entrypoint:
 
@@ -127,13 +151,13 @@ export const inkronik = initInkronik()
 bun --preload ./inkronik-trace.ts src/main.ts
 ```
 
-For env-only setup, preload the register entrypoint directly:
+For environment-only setup, preload the init entrypoint directly:
 
 ```bash
-bun --preload @inkronik/node-sdk/register src/main.ts
+bun --preload @inkronik/node-sdk/init src/main.ts
 ```
 
-The preload agent initializes the default client, starts runtime metrics, and instruments global `fetch`, Postgres.js, and `pg` before application code runs.
+The existing `@inkronik/node-sdk/register` entrypoint remains available as a backwards-compatible alias.
 
 Use `instrumentFetch()` or `instrumentGlobalFetch()` in standalone Node processes. Express and NestJS adapters enable global `fetch`
 instrumentation by default, so outbound `fetch` calls made while handling a request appear as child `client` spans and propagate
@@ -208,10 +232,11 @@ global `fetch`.
 
 ## PostgreSQL
 
-The preload agent automatically instruments both supported PostgreSQL drivers:
+The SDK supports two PostgreSQL drivers with different initialization requirements:
 
-- `postgres` for Postgres.js and Drizzle;
-- `pg` for TypeORM, direct `Client` queries, and direct `Pool` queries.
+- `pg` works with import-first initialization for TypeORM, Drizzle's `node-postgres` driver, direct `Client` queries, and direct `Pool`
+  queries;
+- `postgres` works transparently with Bun preload for Postgres.js and Drizzle's `postgres-js` driver.
 
 TypeORM does not need Inkronik-specific database configuration. Its existing `pg` client and pool queries become child `database` spans under the active request trace.
 
@@ -256,7 +281,7 @@ initInkronik({
 // Use `postgres: false` to disable automatic Postgres.js instrumentation.
 ```
 
-Automatic module loading currently targets Bun. When running without the Bun preload agent, use the manual API:
+Transparent Postgres.js module loading currently targets Bun preload. When running without it, use the manual API:
 
 ```ts
 import postgres from 'postgres'

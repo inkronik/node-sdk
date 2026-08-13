@@ -1,3 +1,4 @@
+import '@inkronik/node-sdk/init'
 import { getDefaultInkronikClient, type InkronikClient } from '@inkronik/node-sdk'
 import { initInkronik } from '@inkronik/node-sdk/auto'
 import { createInkronikExpressMiddleware } from '@inkronik/node-sdk/express'
