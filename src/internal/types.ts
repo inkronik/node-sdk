@@ -1,3 +1,4 @@
+import type { ClientRequest } from 'node:http'
 import type { InkronikClient } from '../client.js'
 import type { IngestTelemetrySignal } from '../protocol/types.js'
 import type {
@@ -8,6 +9,7 @@ import type {
     HttpLikeRequest,
     HttpLikeResponse,
     InitInkronikOptions,
+    NodeHttpInstrumentationOptions,
     PgAutoInstrumentationClient,
     PgConstructor,
     PgQueryMethod,
@@ -288,6 +290,57 @@ export interface CaptureClientSpanInput {
     readonly peerService: string
     readonly statusCode: number
     readonly url: URL
+}
+
+// Node's overloaded request/get boundary cannot be represented as one precise tuple without losing supported overloads.
+export type NodeHttpArguments = ReadonlyArray<unknown>
+export type NodeHttpRequestMethod = typeof import('node:http').request
+export type NodeHttpGetMethod = typeof import('node:http').get
+
+export interface NodeHttpModuleLike {
+    readonly get: NodeHttpGetMethod
+    readonly request: NodeHttpRequestMethod
+}
+
+export interface StartNodeHttpAutoInstrumentationInput {
+    readonly captureClientSpan: (input: CaptureClientSpanInput) => void
+    readonly collectorUrl: string
+    readonly options: NodeHttpInstrumentationOptions
+}
+
+export interface InstrumentNodeHttpModuleInput extends StartNodeHttpAutoInstrumentationInput {
+    readonly defaultProtocol: 'http:' | 'https:'
+    readonly module: NodeHttpModuleLike
+}
+
+export interface InstrumentNodeHttpRequestInput extends StartNodeHttpAutoInstrumentationInput {
+    readonly request: ClientRequest
+    readonly url: URL
+}
+
+export interface GetNodeHttpRequestUrlInput {
+    readonly argumentsList: NodeHttpArguments
+    readonly defaultProtocol: 'http:' | 'https:'
+}
+
+export interface NodeHttpCollectorRequestInput {
+    readonly collectorUrl: string
+    readonly url: URL
+}
+
+export interface DefineNodeHttpModuleMethodInput {
+    readonly method: NodeHttpGetMethod | NodeHttpRequestMethod
+    readonly module: NodeHttpModuleLike
+    readonly property: 'get' | 'request'
+}
+
+export interface NodeHttpRequestCaptureState {
+    captured: boolean
+}
+
+export interface NodeHttpModuleInstrumentation {
+    readonly request: NodeHttpRequestMethod
+    readonly restore: () => void
 }
 
 export interface CaptureFunctionSpanInput {

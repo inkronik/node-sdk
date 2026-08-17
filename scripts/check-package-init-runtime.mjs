@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import http from 'node:http'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
@@ -10,6 +11,8 @@ const load = specifier => (mode === 'cjs' ? Promise.resolve(require(specifier)) 
 const pg = require('pg')
 const originalClientQuery = pg.Client.prototype.query
 const originalFetch = globalThis.fetch
+const originalHttpGet = http.get
+const originalHttpRequest = http.request
 const fetchImpl = async () =>
     new Response(JSON.stringify({ accepted: 0, application_id: 'application-init', organisation_id: 'organisation-init' }), {
         headers: { 'content-type': 'application/json' },
@@ -29,11 +32,15 @@ try {
 
     assert.ok(root.getDefaultInkronikClient(), `${mode} init did not initialize the default client`)
     assert.notEqual(globalThis.fetch, fetchImpl, `${mode} init did not instrument global fetch`)
+    assert.notEqual(http.get, originalHttpGet, `${mode} init did not instrument node:http get`)
+    assert.notEqual(http.request, originalHttpRequest, `${mode} init did not instrument node:http request`)
     assert.notEqual(pg.Client.prototype.query, originalClientQuery, `${mode} init did not instrument pg`)
 
     await auto.shutdownInkronik()
 
     assert.equal(globalThis.fetch, fetchImpl, `${mode} shutdown did not restore global fetch`)
+    assert.equal(http.get, originalHttpGet, `${mode} shutdown did not restore node:http get`)
+    assert.equal(http.request, originalHttpRequest, `${mode} shutdown did not restore node:http request`)
     assert.equal(pg.Client.prototype.query, originalClientQuery, `${mode} shutdown did not restore pg`)
 } finally {
     globalThis.fetch = originalFetch

@@ -18,6 +18,7 @@ import {
     markHttpExchangeCaptured,
     resolveCapturedResponseHeaders,
     resolveAutoInstrumentFetchOptions,
+    resolveAutoInstrumentHttpOptions,
     resolveCaptureOptions,
     stringifyHttpBodySample,
 } from '../http-utils.js'
@@ -91,9 +92,14 @@ export class InkronikNestInterceptor implements NestInterceptor {
     ) {
         this.captureOptions = resolveCaptureOptions(options)
         const fetchOptions = resolveAutoInstrumentFetchOptions(options.autoInstrumentFetch)
+        const httpOptions = resolveAutoInstrumentHttpOptions(options.autoInstrumentHttp)
 
         if (options.enabled !== false && fetchOptions !== undefined) {
             this.client.instrumentGlobalFetch(fetchOptions)
+        }
+
+        if (options.enabled !== false && httpOptions !== undefined) {
+            this.client.instrumentNodeHttp(httpOptions)
         }
     }
 

@@ -8,6 +8,7 @@ const createRuntimeState = (): InkronikRuntimeState => ({
         client: null,
         restoreBullMQ: null,
         restoreFetch: null,
+        restoreHttp: null,
         restorePg: null,
         restorePostgres: null,
     },

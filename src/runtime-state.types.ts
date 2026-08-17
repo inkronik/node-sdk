@@ -6,6 +6,7 @@ export interface AutoInstrumentationRuntimeState {
     client: InkronikClient | null
     restoreBullMQ: (() => void) | null
     restoreFetch: (() => void) | null
+    restoreHttp: (() => void) | null
     restorePg: (() => void) | null
     restorePostgres: (() => void) | null
 }

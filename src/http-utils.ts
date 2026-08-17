@@ -26,6 +26,7 @@ import type {
     HttpRequestInstrumentationState,
     HttpRequestKind,
     InstrumentedFetchOptions,
+    NodeHttpInstrumentationOptions,
     GetRequestBodyInput,
     ResolvedCaptureRequestResponseOptions,
     ResolveHttpMessageSizeInput,
@@ -570,4 +571,12 @@ export const resolveAutoInstrumentFetchOptions = (
     }
 
     return option
+}
+
+export const resolveAutoInstrumentHttpOptions = (
+    option: CaptureRequestResponseOptions['autoInstrumentHttp'],
+): NodeHttpInstrumentationOptions | undefined => {
+    if (option === false) return undefined
+
+    return option === true || option === undefined ? {} : option
 }

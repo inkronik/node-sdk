@@ -16,6 +16,7 @@ import {
     isErrorStatusCode,
     markHttpExchangeCaptured,
     resolveAutoInstrumentFetchOptions,
+    resolveAutoInstrumentHttpOptions,
     resolveCapturedResponseHeaders,
     resolveCaptureOptions,
     stringifyHttpBodySample,
@@ -24,9 +25,14 @@ import { runWithTraceContext, toTraceparent } from '../trace-context.js'
 
 export const createInkronikExpressMiddleware = ({ client, options = {} }: CreateInkronikExpressMiddlewareInput) => {
     const fetchOptions = resolveAutoInstrumentFetchOptions(options.autoInstrumentFetch)
+    const httpOptions = resolveAutoInstrumentHttpOptions(options.autoInstrumentHttp)
 
     if (options.enabled !== false && fetchOptions !== undefined) {
         client.instrumentGlobalFetch(fetchOptions)
+    }
+
+    if (options.enabled !== false && httpOptions !== undefined) {
+        client.instrumentNodeHttp(httpOptions)
     }
 
     return (request: HttpLikeRequest, response: HttpLikeResponse, next: HttpLikeNext): void => {

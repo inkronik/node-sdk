@@ -19,6 +19,14 @@ const resolveFetchOptions = (options: InitInkronikOptions): Parameters<InkronikC
     return fetchOptions === true || fetchOptions === undefined ? {} : fetchOptions
 }
 
+const resolveHttpOptions = (options: InitInkronikOptions): Parameters<InkronikClient['instrumentNodeHttp']>[0] | false => {
+    const httpOptions = options.instrumentations?.http
+
+    if (httpOptions === false) return false
+
+    return httpOptions === true || httpOptions === undefined ? {} : httpOptions
+}
+
 const startRuntimeMetrics = ({ client, options }: AutoInstrumentationStartInput): void => {
     const runtimeMetrics = options.instrumentations?.runtimeMetrics
 
@@ -37,6 +45,12 @@ const startFetchInstrumentation = ({ client, options }: AutoInstrumentationStart
     }
 
     return client.instrumentGlobalFetch(fetchOptions)
+}
+
+const startHttpInstrumentation = ({ client, options }: AutoInstrumentationStartInput): (() => void) | null => {
+    const httpOptions = resolveHttpOptions(options)
+
+    return httpOptions === false ? null : client.instrumentNodeHttp(httpOptions)
 }
 
 const startPostgresInstrumentation = ({ client, options }: AutoInstrumentationStartInput): (() => void) | null => {
@@ -99,6 +113,7 @@ export const initInkronik = (options: InitInkronikOptions = {}): InkronikClient 
     const previousClient = autoState.client
     autoState.restoreBullMQ?.()
     autoState.restoreFetch?.()
+    autoState.restoreHttp?.()
     autoState.restorePg?.()
     autoState.restorePostgres?.()
     void previousClient?.shutdown().catch(() => undefined)
@@ -106,6 +121,7 @@ export const initInkronik = (options: InitInkronikOptions = {}): InkronikClient 
     const client = createInkronikClientFromEnv(options)
     const restoreBullMQ = startBullMQInstrumentation({ client, options })
     const restoreFetch = startFetchInstrumentation({ client, options })
+    const restoreHttp = startHttpInstrumentation({ client, options })
     const restorePg = startPgInstrumentation({ client, options })
     const restorePostgres = startPostgresInstrumentation({ client, options })
 
@@ -120,6 +136,8 @@ export const initInkronik = (options: InitInkronikOptions = {}): InkronikClient 
     // eslint-disable-next-line functional/immutable-data
     autoState.restoreFetch = restoreFetch
     // eslint-disable-next-line functional/immutable-data
+    autoState.restoreHttp = restoreHttp
+    // eslint-disable-next-line functional/immutable-data
     autoState.restorePg = restorePg
     // eslint-disable-next-line functional/immutable-data
     autoState.restorePostgres = restorePostgres
@@ -130,6 +148,7 @@ export const initInkronik = (options: InitInkronikOptions = {}): InkronikClient 
 export const shutdownInkronik = async (): Promise<void> => {
     autoState.restoreBullMQ?.()
     autoState.restoreFetch?.()
+    autoState.restoreHttp?.()
     autoState.restorePg?.()
     autoState.restorePostgres?.()
 
@@ -145,6 +164,8 @@ export const shutdownInkronik = async (): Promise<void> => {
     autoState.restoreBullMQ = null
     // eslint-disable-next-line functional/immutable-data
     autoState.restoreFetch = null
+    // eslint-disable-next-line functional/immutable-data
+    autoState.restoreHttp = null
     // eslint-disable-next-line functional/immutable-data
     autoState.restorePg = null
     // eslint-disable-next-line functional/immutable-data
