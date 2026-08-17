@@ -31,6 +31,7 @@ import type {
     InstrumentedGlobalFetch,
     LogInput,
     LoggerRecord,
+    NodeHttpInstrumentationOptions,
     ResolvedLogRedactionOptions,
     RuntimeMetricsOptions,
     SendTelemetryInput,
@@ -43,6 +44,7 @@ import type { IngestTelemetryRequest, IngestTelemetryResponse, IngestTelemetrySi
 import { getDatabaseOperation, normalizeDatabaseStatement } from './database.js'
 import { getHttpHeaderValue, resolveHttpMessageSize } from './http-utils.js'
 import { redactLogAttributes, redactLogText, resolveLogRedactionOptions } from './log-redaction.js'
+import { startNodeHttpAutoInstrumentation } from './node-http-auto.js'
 import {
     createChildTraceContext,
     getCurrentTelemetryContext,
@@ -207,6 +209,7 @@ export class InkronikClient {
     private runtimeMetricsTimer: ReturnType<typeof setInterval> | null = null
     private eventLoopMonitor: ReturnType<typeof monitorEventLoopDelay> | null = null
     private globalFetchRestore: (() => void) | null = null
+    private nodeHttpRestore: (() => void) | null = null
     private activeFlush: Promise<FlushResult> | null = null
     private queue: Array<IngestTelemetrySignal> = []
 
@@ -638,6 +641,22 @@ export class InkronikClient {
         // Keep the patch tied to this client lifecycle.
         // eslint-disable-next-line functional/immutable-data
         this.globalFetchRestore = restore
+
+        return restore
+    }
+
+    instrumentNodeHttp(options: NodeHttpInstrumentationOptions = {}): () => void {
+        const restore = startNodeHttpAutoInstrumentation({
+            captureClientSpan: input => this.captureClientSpan(input),
+            collectorUrl: this.collectorUrl,
+            options,
+        })
+
+        if (restore === null) return () => undefined
+
+        // The client owns the process patch lifecycle when it installed the wrapper.
+        // eslint-disable-next-line functional/immutable-data
+        this.nodeHttpRestore = restore
 
         return restore
     }
@@ -1147,8 +1166,11 @@ export class InkronikClient {
         this.stopRuntimeMetrics()
         clearInterval(this.flushTimer)
         this.globalFetchRestore?.()
+        this.nodeHttpRestore?.()
         // eslint-disable-next-line functional/immutable-data
         this.globalFetchRestore = null
+        // eslint-disable-next-line functional/immutable-data
+        this.nodeHttpRestore = null
         return this.flush()
     }
 

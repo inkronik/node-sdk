@@ -34,7 +34,7 @@ The package is split into:
 - NestJS logger adapter for forwarding application logs while preserving console output.
 - runtime metrics for Node memory, uptime, and event loop lag;
 - trace context propagation with W3C `traceparent`;
-- automatic `fetch` instrumentation for downstream HTTP client spans in framework adapters.
+- automatic global `fetch`, `node:http`, and `node:https` instrumentation for downstream HTTP client spans, including Axios and Nest `HttpService`.
 - automatic `postgres-js` and `pg` query instrumentation under the Bun preload agent.
 
 ## Core
@@ -86,7 +86,7 @@ const reconciled = await inkronik.withSpan({
 ```
 
 The operation becomes a root span when no trace is active and a child span otherwise. Its callback runs inside the active Inkronik trace context,
-so instrumented `fetch`, PostgreSQL queries, logs, events, and nested `withSpan()` calls remain correlated. Synchronous return values and promises are
+so instrumented outbound HTTP, PostgreSQL queries, logs, events, and nested `withSpan()` calls remain correlated. Synchronous return values and promises are
 preserved; thrown errors and rejected promises mark the span as failed and are rethrown unchanged. Manual spans default to the `internal` kind and
 category. Short-lived processes such as Kubernetes CronJobs should call `await inkronik.shutdown()` before exiting so queued telemetry is flushed.
 
@@ -130,7 +130,7 @@ import 'dotenv/config'
 import '@inkronik/node-sdk/init'
 ```
 
-This initializes the default client, starts runtime metrics, and instruments global `fetch`, `pg`, and integrations loaded later. The
+This initializes the default client, starts runtime metrics, and instruments global `fetch`, `node:http`, `node:https`, `pg`, and integrations loaded later. The
 application start command does not need to change. Keep the Inkronik import ahead of framework, database, queue, and application imports.
 
 ### Full Postgres.js auto-instrumentation
@@ -159,9 +159,25 @@ bun --preload @inkronik/node-sdk/init src/main.ts
 
 The existing `@inkronik/node-sdk/register` entrypoint remains available as a backwards-compatible alias.
 
-Use `instrumentFetch()` or `instrumentGlobalFetch()` in standalone Node processes. Express and NestJS adapters enable global `fetch`
-instrumentation by default, so outbound `fetch` calls made while handling a request appear as child `client` spans and propagate
-`traceparent` downstream.
+### Outbound HTTP auto-instrumentation
+
+Preload initialization and the Express/NestJS adapters instrument global `fetch`, `node:http`, and `node:https` by default. Axios and Nest
+`HttpService` use the instrumented Node transport automatically; applications do not need interceptors, a custom Axios adapter, or any other
+Inkronik-specific HTTP configuration. Each transport request becomes a child `client` span and propagates W3C `traceparent` downstream.
+
+The SDK excludes its own Collector delivery. If a request already contains `traceparent`, the Node transport preserves it and does not create a
+second span, which prevents duplicates when a traced high-level client delegates to `node:http` or another tracer owns the request.
+
+Standalone clients can install the same process instrumentation explicitly:
+
+```ts
+const restoreHttp = inkronik.instrumentNodeHttp()
+const restoreFetch = inkronik.instrumentGlobalFetch()
+
+// Optional manual teardown; inkronik.shutdown() also restores wrappers owned by the client.
+restoreHttp()
+restoreFetch()
+```
 
 ## Express
 
@@ -227,8 +243,8 @@ The middleware covers responses produced before interceptors run, including guar
 The interceptor keeps framework exception details and stack traces for controller and pipe failures. Both adapters share request state, so a
 request produces one server span rather than duplicate middleware and interceptor spans.
 
-Pass `{ autoInstrumentFetch: false }` to the Express middleware or NestJS interceptor options when another tracer already patches
-global `fetch`.
+Pass `{ autoInstrumentFetch: false, autoInstrumentHttp: false }` to the Express middleware or NestJS interceptor options when another tracer
+already owns global `fetch` and the Node HTTP transports. With preload initialization, use `instrumentations: { fetch: false, http: false }`.
 
 ## PostgreSQL
 

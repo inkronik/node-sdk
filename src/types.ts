@@ -57,6 +57,7 @@ export interface CreateInkronikClientFromEnvOptions {
 export interface AutoInstrumentationOptions {
     readonly bullMQ?: boolean | BullMQInstrumentationOptions
     readonly fetch?: boolean | InstrumentedFetchOptions
+    readonly http?: boolean | NodeHttpInstrumentationOptions
     readonly pg?: boolean | DatabaseInstrumentationOptions
     readonly postgres?: boolean | DatabaseInstrumentationOptions
     readonly runtimeMetrics?: boolean | RuntimeMetricsOptions
@@ -144,6 +145,7 @@ export interface AppendBodyChunkInput {
 export interface CaptureRequestResponseOptions {
     readonly enabled?: boolean
     readonly autoInstrumentFetch?: boolean | InstrumentedFetchOptions
+    readonly autoInstrumentHttp?: boolean | NodeHttpInstrumentationOptions
     readonly exclude?: (request: HttpLikeRequest) => boolean
     readonly captureRequestResponse?: boolean
     readonly captureRequestBody?: boolean
@@ -165,7 +167,10 @@ export interface ResolvedCaptureRequestResponseOverrides {
     readonly redaction: ResolvedCaptureRedactionOptions
 }
 
-export type ResolvedCaptureRequestResponseOptions = Omit<Required<CaptureRequestResponseOptions>, 'autoInstrumentFetch' | 'metrics' | 'redaction'> &
+export type ResolvedCaptureRequestResponseOptions = Omit<
+    Required<CaptureRequestResponseOptions>,
+    'autoInstrumentFetch' | 'autoInstrumentHttp' | 'metrics' | 'redaction'
+> &
     ResolvedCaptureRequestResponseOverrides
 
 export interface HttpCaptureContext {
@@ -464,6 +469,16 @@ export interface InstrumentedFetchOptions {
     readonly fetchImpl?: typeof fetch
     readonly getPeerService?: (input: RequestInfo | URL) => string
     readonly shouldTrace?: (input: RequestInfo | URL) => boolean
+}
+
+export interface NodeHttpRequestContext {
+    readonly method: string
+    readonly url: URL
+}
+
+export interface NodeHttpInstrumentationOptions {
+    readonly getPeerService?: (context: NodeHttpRequestContext) => string
+    readonly shouldTrace?: (context: NodeHttpRequestContext) => boolean
 }
 
 export interface InstrumentedFetchMarker {

@@ -1,3 +1,4 @@
+import http from 'node:http'
 import { join } from 'node:path'
 import { describe, expect, test } from 'bun:test'
 import { initInkronik, shutdownInkronik } from './auto.js'
@@ -44,6 +45,7 @@ describe('initInkronik', () => {
 
     test('initializes the default agent and instruments global fetch', async () => {
         const originalFetch = globalThis.fetch
+        const originalHttpRequest = http.request
         const requests: Array<{ readonly input: RequestInfo | URL; readonly init?: RequestInit; readonly traceparent?: string | null }> = []
         const fetchImpl = ((input: RequestInfo | URL, init?: RequestInit) => {
             const url = input instanceof Request ? input.url : input.toString()
@@ -79,6 +81,7 @@ describe('initInkronik', () => {
             })
 
             expect(globalThis.fetch).not.toBe(fetchImpl)
+            expect(http.request).not.toBe(originalHttpRequest)
 
             await runWithTraceContext(
                 {
@@ -92,12 +95,33 @@ describe('initInkronik', () => {
             await client.shutdown()
 
             expect(globalThis.fetch).toBe(fetchImpl)
+            expect(http.request).toBe(originalHttpRequest)
             expect(requests[0]?.traceparent).toMatch(/^00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-[0-9a-f]{16}-01$/u)
         } finally {
             await shutdownInkronik()
             // Restore the real process global for the rest of the suite.
             // eslint-disable-next-line functional/immutable-data
             globalThis.fetch = originalFetch
+        }
+    })
+
+    test('supports an explicit node http instrumentation opt-out', async () => {
+        const originalHttpRequest = http.request
+
+        try {
+            initInkronik({
+                env: {
+                    INKRONIK_COLLECTOR_URL: 'http://collector:4000',
+                    INKRONIK_INGEST_API_KEY: 'ik_live_prefix_secret',
+                    INKRONIK_APPLICATION_ID: 'application-regression',
+                    INKRONIK_SERVICE_NAME: 'orders-api',
+                },
+                instrumentations: { bullMQ: false, fetch: false, http: false, pg: false, postgres: false, runtimeMetrics: false },
+            })
+
+            expect(http.request).toBe(originalHttpRequest)
+        } finally {
+            await shutdownInkronik()
         }
     })
 
