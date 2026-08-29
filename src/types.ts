@@ -209,11 +209,37 @@ export interface CaptureHttpExchangeInput {
     readonly errorHandled?: boolean
 }
 
+export type CapturedSpanStatus = 'error' | 'ok' | 'unset'
+
+export interface CaptureSpanInput {
+    readonly traceId: string
+    readonly spanId: string
+    readonly parentSpanId?: string
+    readonly timestamp: string
+    readonly endTime: string
+    readonly durationUs: number
+    readonly name: string
+    readonly kind?: string
+    readonly category?: string
+    readonly statusCode?: CapturedSpanStatus
+    readonly statusMessage?: string
+    readonly attributes?: Record<string, string>
+    readonly resourceAttributes?: Record<string, string>
+    readonly httpMethod?: string
+    readonly httpRoute?: string
+    readonly httpStatusCode?: number
+    readonly databaseSystem?: string
+    readonly messagingSystem?: string
+    readonly peerService?: string
+}
+
 export interface TraceContext {
     readonly traceId: string
     readonly spanId: string
     readonly parentSpanId: string
 }
+
+export type ExternalTraceContextResolver = () => TraceContext | undefined
 
 export interface WithSpanInput<TResult> {
     readonly name: string
@@ -379,6 +405,11 @@ export interface BullMQQueueConstructor {
 
 export interface BullMQQueuePrototype {
     add?: unknown
+}
+
+export interface BullMQModule {
+    readonly Queue?: BullMQQueueConstructor
+    readonly default?: BullMQModule
 }
 
 export interface InstrumentBullMQInput extends BullMQInstrumentationOptions {

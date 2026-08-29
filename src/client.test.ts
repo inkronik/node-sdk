@@ -65,6 +65,44 @@ const hasPostgresQueryValues = (value: unknown): value is { readonly values: () 
     typeof value === 'object' && value !== null && 'values' in value && typeof value.values === 'function'
 
 describe('InkronikClient', () => {
+    test('captures an externally-owned span without replacing its trace identifiers', async () => {
+        const { fetchImpl, requests } = createTelemetryFetch()
+        const client = new InkronikClient({
+            collectorUrl: 'http://collector:4000',
+            ingestApiKey: 'ik_live_prefix_secret',
+            serviceName: 'nextjs-storefront',
+            fetchImpl,
+            flushIntervalMs: 60_000,
+        })
+
+        client.captureSpan({
+            attributes: { 'next.span_type': 'BaseServer.handleRequest' },
+            durationUs: 12_500,
+            endTime: '2026-08-29T10:00:00.012Z',
+            httpMethod: 'GET',
+            httpRoute: '/orders/[id]',
+            httpStatusCode: 200,
+            kind: 'server',
+            name: 'GET /orders/[id]',
+            parentSpanId: '1111111111111111',
+            spanId: '2222222222222222',
+            statusCode: 'ok',
+            timestamp: '2026-08-29T10:00:00.000Z',
+            traceId: '33333333333333333333333333333333',
+        })
+        await client.shutdown()
+
+        const span = getTelemetrySignals(requests[0] as FetchRequest).find(signal => signal.signal_type === 'span')
+
+        expect(span?.payload).toMatchObject({
+            duration_us: 12_500,
+            http_route: '/orders/[id]',
+            parent_span_id: '1111111111111111',
+            span_id: '2222222222222222',
+            trace_id: '33333333333333333333333333333333',
+        })
+    })
+
     test('posts queued telemetry to collector with ingest key and application header', async () => {
         const { fetchImpl, requests } = createTelemetryFetch()
 

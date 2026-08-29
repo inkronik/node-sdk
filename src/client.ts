@@ -15,6 +15,7 @@ import type {
     CaptureErrorOptions,
     CaptureEventSignalInput,
     CaptureHttpExchangeInput,
+    CaptureSpanInput,
     CaptureMessagingSpanInput,
     BullMQJobLike,
     DatabaseQuerySpanInput,
@@ -1062,6 +1063,43 @@ export class InkronikClient {
             // eslint-disable-next-line functional/immutable-data
             delete (Queue.prototype as Record<PropertyKey, unknown>)[INKRONIK_ORIGINAL_BULLMQ_QUEUE_ADD]
         }
+    }
+
+    captureSpan(input: CaptureSpanInput): void {
+        const statusCode = input.statusCode ?? 'unset'
+        const hasError = statusCode === 'error'
+        const attributes = redactLogAttributes({ attributes: input.attributes ?? {}, redaction: this.logRedaction })
+        const resourceAttributes = redactLogAttributes({ attributes: input.resourceAttributes ?? {}, redaction: this.logRedaction })
+
+        this.enqueue({
+            signal_type: 'span',
+            environment: this.environment,
+            timestamp: input.timestamp,
+            source: this.source,
+            attributes: mergeAttributes({ defaults: this.defaultAttributes, overrides: attributes }),
+            payload: {
+                trace_id: input.traceId,
+                span_id: input.spanId,
+                parent_span_id: input.parentSpanId ?? '',
+                end_time: input.endTime,
+                duration_us: Math.max(0, Math.round(input.durationUs)),
+                service_name: this.serviceName,
+                operation_name: input.name,
+                span_kind: input.kind ?? 'internal',
+                span_category: input.category ?? 'internal',
+                status_code: statusCode,
+                status_message: input.statusMessage ?? '',
+                has_error: hasError,
+                http_method: input.httpMethod ?? '',
+                http_route: input.httpRoute ?? '',
+                http_status_code: input.httpStatusCode ?? 0,
+                db_system: input.databaseSystem ?? '',
+                messaging_system: input.messagingSystem ?? '',
+                peer_service: input.peerService ?? '',
+                resource_attributes: resourceAttributes,
+                span_attributes: attributes,
+            },
+        })
     }
 
     instrumentBullMQProcessor<TJob extends BullMQJobLike, TResult>({

@@ -1,6 +1,6 @@
 import type { AsyncLocalStorage } from 'node:async_hooks'
 import type { InkronikClient } from './client.js'
-import type { TelemetryContext, TraceContext } from './types.js'
+import type { ExternalTraceContextResolver, TelemetryContext, TraceContext } from './types.js'
 
 export interface AutoInstrumentationRuntimeState {
     client: InkronikClient | null
@@ -14,5 +14,6 @@ export interface AutoInstrumentationRuntimeState {
 export interface InkronikRuntimeState {
     readonly autoInstrumentation: AutoInstrumentationRuntimeState
     defaultClient: InkronikClient | null
+    externalTraceContextResolver: ExternalTraceContextResolver | null
     readonly traceStorage: AsyncLocalStorage<TraceContext | TelemetryContext>
 }

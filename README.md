@@ -29,6 +29,7 @@ server-side and never expose it in browser bundles or source control.
 The package is split into:
 
 - core client for logs, events, gauges, and manual telemetry;
+- Next.js server instrumentation built on the framework's stable OpenTelemetry hooks;
 - Express middleware for automatic HTTP span and request/response capture;
 - NestJS interceptor for automatic HTTP span and request/response capture;
 - NestJS logger adapter for forwarding application logs while preserving console output.
@@ -178,6 +179,40 @@ const restoreFetch = inkronik.instrumentGlobalFetch()
 restoreHttp()
 restoreFetch()
 ```
+
+## Next.js
+
+Next.js 15 and newer can initialize server telemetry through its stable `instrumentation.ts` convention. Create this file at the application root
+or under `src/` when the application uses a source directory:
+
+```ts
+// instrumentation.ts
+export { onRequestError, register } from '@inkronik/node-sdk/next'
+```
+
+Configure the same server-only environment variables shown above. `register` connects Next.js' built-in OpenTelemetry request, rendering, route
+handler, and server-operation spans to Inkronik. Existing Inkronik fetch, Node HTTP, PostgreSQL, BullMQ, logs, and manual spans inherit the active
+Next.js trace. The adapter drops Next.js' overlapping `AppRender.fetch` span by default, so a downstream request is reported once by the richer
+Inkronik transport instrumentation. It also awaits delivery of unhandled request errors and flushes completed root requests for serverless
+runtimes.
+
+To pass SDK options explicitly, wrap only registration and keep the error hook exported:
+
+```ts
+import { onRequestError, registerInkronikNext } from '@inkronik/node-sdk/next'
+
+export const register = () =>
+    registerInkronikNext({
+        serviceName: 'storefront',
+        instrumentations: { runtimeMetrics: false },
+    })
+
+export { onRequestError }
+```
+
+Server tracing currently targets the Next.js Node runtime. The entrypoint is safe to evaluate for Edge routes and becomes a no-op there; do not
+expose `INKRONIK_INGEST_API_KEY` through `NEXT_PUBLIC_` variables. Add browser RUM and client navigation tracking separately through
+`@inkronik/browser-sdk/next` and a Browser Source public key.
 
 ## Express
 
