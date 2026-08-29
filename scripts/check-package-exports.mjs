@@ -8,6 +8,7 @@ const runtimeExports = [
     { name: './auto', expectedExport: 'initInkronik' },
     { name: './express', expectedExport: 'createInkronikExpressMiddleware' },
     { name: './nest', expectedExport: 'InkronikNestInterceptor' },
+    { name: './next', expectedExport: 'registerInkronikNext' },
 ]
 const toSpecifier = name => (name === '.' ? '@inkronik/node-sdk' : `@inkronik/node-sdk${name.slice(1)}`)
 

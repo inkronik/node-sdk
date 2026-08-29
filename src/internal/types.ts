@@ -65,11 +65,6 @@ export interface AutoInstrumentationStartInput {
     readonly options: InitInkronikOptions
 }
 
-export interface AsyncInstrumentationState {
-    active: boolean
-    restore: (() => void) | null
-}
-
 export interface SeverityDefinition {
     readonly number: number
     readonly text: string

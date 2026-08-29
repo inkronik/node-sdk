@@ -1,6 +1,6 @@
 ---
 name: integrate-inkronik-node-sdk
-description: Integrate or audit @inkronik/node-sdk in a Node.js or Bun service. Use when adding Inkronik tracing, telemetry, HTTP adapters, authenticated user context, cron or background spans, fetch, BullMQ, PostgreSQL, Drizzle, or TypeORM instrumentation; when replacing preload with import-first initialization; or when verifying an existing server-side integration. Do not use for @inkronik/browser-sdk.
+description: Integrate or audit @inkronik/node-sdk in a Node.js, Bun, or Next.js service. Use when adding Inkronik tracing, telemetry, Next.js instrumentation, HTTP adapters, authenticated user context, cron or background spans, fetch, BullMQ, PostgreSQL, Drizzle, or TypeORM instrumentation; when replacing preload with import-first initialization; or when verifying an existing server-side integration. For full-stack Next.js, also configure @inkronik/browser-sdk/next. Do not use for standalone browser-only integrations.
 ---
 
 # Integrate Inkronik Node SDK
@@ -20,6 +20,8 @@ Instrument a service without silently losing HTTP, authenticated-user, backgroun
 ## Integration rules
 
 - Install an exact `@inkronik/node-sdk` version with the repository's package manager. Never introduce a version range.
+- For Next.js, use `@inkronik/node-sdk/next` from `instrumentation.ts`; do not add Express/Nest middleware or generic preload initialization to the same Next.js request path.
+- Pair full-stack Next.js with an exact `@inkronik/browser-sdk` version and its `./next` entrypoint in `instrumentation-client.ts`. Keep the public Browser Source key separate from the secret server ingest key.
 - Prefer `import '@inkronik/node-sdk/init'` as the first application import for environment-based configuration. Allow an environment or secrets loader before it only when that loader provides Inkronik variables.
 - Preserve the existing start command unless Postgres.js requires preload or the user explicitly requests command-based initialization.
 - Keep the existing `@inkronik/node-sdk/register` entrypoint working when auditing an older integration; migrate it only when requested or when touching the initialization path.
@@ -64,5 +66,7 @@ Verify behavior, not only compilation. Cover the applicable paths:
 - a scheduled operation creates a root `scheduled` span when no request exists;
 - shutdown flushes short-lived cron or worker processes;
 - existing application behavior and error propagation remain unchanged.
+- a Next.js build resolves both `./next` entrypoints, one client route transition creates one navigation view, and Node Runtime request spans do not duplicate server `fetch` spans;
+- Edge routes evaluate the server entrypoint without importing Node-only code and match the documented no-op behavior.
 
 If an end-to-end collector is unavailable, add focused tests around adapter inputs and emitted telemetry, then clearly identify the remaining live verification.

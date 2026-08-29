@@ -27,6 +27,43 @@ INKRONIK_SERVICE_NAME
 
 Use `INKRONIK_APPLICATION_ID`, `INKRONIK_ENVIRONMENT`, and `INKRONIK_SERVICE_VERSION` when the target deployment requires them. Follow the target repository's configuration validation and deployment conventions.
 
+## Next.js
+
+Use the framework entrypoints instead of generic preload or HTTP middleware. Install exact releases containing the `./next` exports, then add
+server instrumentation at the project root or under `src/`:
+
+```ts
+// instrumentation.ts
+export { onRequestError, register } from '@inkronik/node-sdk/next'
+```
+
+The complete server path targets the Next.js Node Runtime. The entrypoint is safe to evaluate for Edge routes and intentionally does nothing there.
+Do not work around this boundary by exposing the server ingest key to browser or Edge client code. Do not register another OpenTelemetry provider or
+add Express/Nest request middleware unless the repository proves a separate request pipeline needs it.
+
+For a full-stack application, add browser instrumentation through the official Next.js client hook:
+
+```ts
+// instrumentation-client.ts
+import { createInkronikNext } from '@inkronik/browser-sdk/next'
+
+export const { client: inkronik, onRouterTransitionStart } = createInkronikNext({
+    publicKey: process.env.NEXT_PUBLIC_INKRONIK_PUBLIC_KEY!,
+    collectorUrl: process.env.NEXT_PUBLIC_INKRONIK_COLLECTOR_URL!,
+    environment: process.env.NEXT_PUBLIC_INKRONIK_ENVIRONMENT ?? 'development',
+    tracePropagationOrigins: ['https://api.example.com'],
+})
+```
+
+Use two application-scoped credentials:
+
+- `INKRONIK_INGEST_API_KEY` is a show-once server secret and must never use the `NEXT_PUBLIC_` prefix;
+- `NEXT_PUBLIC_INKRONIK_PUBLIC_KEY` is the Browser Source key, constrained to browser telemetry and exact allowed origins.
+
+Initialize browser telemetry only after the application's consent policy permits it. The Next.js adapter disables the generic History patch and
+uses `onRouterTransitionStart`, preventing one transition from producing duplicate navigation views. Verify a production Next.js build, one real
+route transition, one Node Runtime request trace, downstream child spans, server error delivery, and the documented Edge no-op.
+
 ## Authenticated user resolver
 
 Use the authenticated principal attached by the application. Adapt property names to the actual request type and keep reusable shapes in the target module's `types.ts` when its repository conventions require it.

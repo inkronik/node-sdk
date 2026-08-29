@@ -1,13 +1,56 @@
+import { createRequire } from 'node:module'
+import { resolve } from 'node:path'
 import { createInkronikClientFromEnv, setDefaultInkronikClient } from './env.js'
 import type { InkronikClient } from './client.js'
 import { startPgAutoInstrumentation } from './pg-auto.js'
 import { startPostgresAutoInstrumentation } from './postgres-auto.js'
 import { getInkronikRuntimeState } from './runtime-state.js'
-import type { AsyncInstrumentationState, AutoInstrumentationStartInput } from './internal/types.js'
-import type { InitInkronikOptions } from './types.js'
+import type { AutoInstrumentationStartInput } from './internal/types.js'
+import type { BullMQModule, BullMQQueueConstructor, InitInkronikOptions } from './types.js'
 
 const BULLMQ_MODULE_NAME = 'bullmq'
 const autoState = getInkronikRuntimeState().autoInstrumentation
+
+const createConsumerRequires = (): ReadonlyArray<NodeJS.Require> => {
+    const entrypoint = process.argv.at(1)
+    const cwdBasePath = resolve(process.cwd(), 'package.json')
+    const basePaths = entrypoint === undefined ? [cwdBasePath] : [resolve(process.cwd(), entrypoint), cwdBasePath]
+
+    return [...new Set(basePaths)].map(createRequire)
+}
+
+const consumerRequires = createConsumerRequires()
+
+const isBullMQQueueConstructor = (value: unknown): value is BullMQQueueConstructor =>
+    typeof value === 'function' && typeof Reflect.get(value, 'prototype') === 'object'
+
+const resolveBullMQModule = (value: unknown): BullMQModule | undefined => {
+    if (typeof value !== 'object' || value === null) {
+        return undefined
+    }
+
+    const module = value as BullMQModule
+
+    if (isBullMQQueueConstructor(module.Queue)) {
+        return module
+    }
+
+    return module.default === undefined ? undefined : resolveBullMQModule(module.default)
+}
+
+const tryLoadBullMQModule = (consumerRequire: NodeJS.Require): BullMQModule | undefined => {
+    try {
+        return resolveBullMQModule(consumerRequire(BULLMQ_MODULE_NAME) as unknown)
+    } catch {
+        return undefined
+    }
+}
+
+const loadBullMQModule = (): BullMQModule | undefined =>
+    consumerRequires.reduce<BullMQModule | undefined>(
+        (bullMQModule, consumerRequire) => bullMQModule ?? tryLoadBullMQModule(consumerRequire),
+        undefined,
+    )
 
 const resolveFetchOptions = (options: InitInkronikOptions): Parameters<InkronikClient['instrumentGlobalFetch']>[0] | false => {
     const fetchOptions = options.instrumentations?.fetch
@@ -87,26 +130,9 @@ const startBullMQInstrumentation = ({ client, options }: AutoInstrumentationStar
     }
 
     const resolvedOptions = bullMQOptions === true || bullMQOptions === undefined ? {} : bullMQOptions
-    const state: AsyncInstrumentationState = { restore: null, active: true }
+    const module = loadBullMQModule()
 
-    void import(BULLMQ_MODULE_NAME)
-        .then(module => {
-            if (!state.active || typeof module.Queue !== 'function') {
-                return
-            }
-
-            // Async optional instrumentation owns local lifecycle state.
-            // eslint-disable-next-line functional/immutable-data
-            state.restore = client.instrumentBullMQ({ ...resolvedOptions, Queue: module.Queue })
-        })
-        .catch(() => undefined)
-
-    return () => {
-        // Async optional instrumentation owns local lifecycle state.
-        // eslint-disable-next-line functional/immutable-data
-        state.active = false
-        state.restore?.()
-    }
+    return module?.Queue === undefined ? null : client.instrumentBullMQ({ ...resolvedOptions, Queue: module.Queue })
 }
 
 export const initInkronik = (options: InitInkronikOptions = {}): InkronikClient => {

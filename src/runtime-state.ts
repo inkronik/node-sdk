@@ -13,6 +13,7 @@ const createRuntimeState = (): InkronikRuntimeState => ({
         restorePostgres: null,
     },
     defaultClient: null,
+    externalTraceContextResolver: null,
     traceStorage: new AsyncLocalStorage(),
 })
 
