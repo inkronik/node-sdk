@@ -89,6 +89,7 @@ const getSignals = (request: SentRequest) => {
                 readonly signal_type: string
                 readonly payload: {
                     readonly http_route?: string
+                    readonly operation_name?: string
                     readonly metric_name?: string
                     readonly span_id?: string
                     readonly span_attributes?: Record<string, string>
@@ -159,6 +160,37 @@ describe('InkronikNestInterceptor', () => {
         expect(capture?.payload.response_body).toBe('{"ok":true}')
         expect(signals.find(signal => signal.payload.metric_name === 'http.server.request.size')?.payload.value).toBe(17)
         expect(signals.find(signal => signal.payload.metric_name === 'http.server.response.size')?.payload.value).toBe(11)
+    })
+
+    test('captures GraphQL identity and treats HTTP 200 execution errors as failures', async () => {
+        const { client, requests } = createTestClient()
+        const request = {
+            ...createRequest(),
+            body: { operationName: 'UpdateOrder', query: 'mutation UpdateOrder { updateOrder(id: "secret") { id } }' },
+            originalUrl: '/graphql',
+            route: { path: '/graphql' },
+        }
+        const { response } = createResponse()
+        const interceptor = new InkronikNestInterceptor(client, { graphql: { captureDocument: 'sanitized' } })
+        const next: CallHandler = { handle: () => of({ data: null, errors: [{ message: 'validation failed' }] }) }
+
+        await lastValueFrom(interceptor.intercept(createExecutionContext({ request, response }), next))
+        await client.shutdown()
+
+        const span = getSignals(requests[0] as SentRequest).find(signal => signal.signal_type === 'span')
+
+        expect(span?.payload).toMatchObject({
+            has_error: true,
+            operation_name: 'mutation UpdateOrder',
+            status_code: 'error',
+            span_attributes: {
+                'graphql.operation.name': 'UpdateOrder',
+                'graphql.operation.type': 'mutation',
+                'graphql.errors.count': '1',
+                'inkronik.request_kind': 'graphql',
+            },
+        })
+        expect(span?.payload.span_attributes?.['graphql.document']).not.toContain('secret')
     })
 
     test('captures successful response bodies when raw response capture is enabled', async () => {

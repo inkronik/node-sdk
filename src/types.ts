@@ -1,4 +1,5 @@
 import type { IngestTelemetryResponse, IngestTelemetrySignal } from './protocol/types.js'
+import type { CapturedGraphqlRequest, GraphqlCaptureOptions, ResolvedGraphqlCaptureOptions } from './graphql/types.js'
 
 export type EventLevel = 'info' | 'warning' | 'error'
 
@@ -78,7 +79,7 @@ export interface HttpMetricsOptions {
     readonly latencyBucketsMs?: ReadonlyArray<number>
 }
 
-export type HttpRequestKind = 'http' | 'sse'
+export type HttpRequestKind = 'graphql' | 'http' | 'sse'
 
 export type CapturedResponseBodyMode = 'none' | 'raw' | 'sample'
 
@@ -160,16 +161,18 @@ export interface CaptureRequestResponseOptions {
     readonly getAttributes?: (context: HttpCaptureContext) => Record<string, string>
     readonly redaction?: CaptureRedactionOptions
     readonly metrics?: HttpMetricsOptions
+    readonly graphql?: GraphqlCaptureOptions
 }
 
 export interface ResolvedCaptureRequestResponseOverrides {
+    readonly graphql: ResolvedGraphqlCaptureOptions
     readonly metrics: Required<HttpMetricsOptions>
     readonly redaction: ResolvedCaptureRedactionOptions
 }
 
 export type ResolvedCaptureRequestResponseOptions = Omit<
     Required<CaptureRequestResponseOptions>,
-    'autoInstrumentFetch' | 'autoInstrumentHttp' | 'metrics' | 'redaction'
+    'autoInstrumentFetch' | 'autoInstrumentHttp' | 'graphql' | 'metrics' | 'redaction'
 > &
     ResolvedCaptureRequestResponseOverrides
 
@@ -207,6 +210,8 @@ export interface CaptureHttpExchangeInput {
     readonly attributes?: Record<string, string>
     readonly error?: unknown
     readonly errorHandled?: boolean
+    readonly graphql?: CapturedGraphqlRequest
+    readonly graphqlErrorCount?: number
 }
 
 export type CapturedSpanStatus = 'error' | 'ok' | 'unset'

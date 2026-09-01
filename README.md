@@ -278,6 +278,30 @@ The middleware covers responses produced before interceptors run, including guar
 The interceptor keeps framework exception details and stack traces for controller and pipe failures. Both adapters share request state, so a
 request produces one server span rather than duplicate middleware and interceptor spans.
 
+### GraphQL requests
+
+The Express and NestJS adapters recognize GraphQL JSON envelopes after the framework has parsed `request.body`. Named operations are reported
+as `query GetOrders`, `mutation UpdateOrder`, or `subscription OrderChanged`, while the original method and route (for example
+`POST /graphql`) remain attached as transport context. Anonymous operations, persisted queries, batches, and GraphQL responses containing an
+`errors` array have deterministic fallback/error handling. Operation names and types are the only GraphQL grouping dimensions.
+
+The existing request evidence capture continues to store a bounded, structured-redacted JSON body when enabled, which may include the query
+and redacted variables. A separate searchable document attribute is off by default. Developers can opt into an AST-sanitized document that
+removes comments and replaces every literal/default value before capture:
+
+```ts
+app.use(
+    createInkronikExpressMiddleware({
+        client: inkronik,
+        options: { graphql: { captureDocument: 'sanitized', maxDocumentBytes: 4_096 } },
+    }),
+)
+```
+
+Use the same `graphql` option as the second argument to `new InkronikNestInterceptor(...)`. There is no raw document-attribute mode, and
+variables are never copied into span attributes. GraphQL parsing is exposed from `@inkronik/node-sdk/graphql` and uses the optional exact
+`graphql@16.11.0` peer; ordinary REST applications do not need to install it.
+
 Pass `{ autoInstrumentFetch: false, autoInstrumentHttp: false }` to the Express middleware or NestJS interceptor options when another tracer
 already owns global `fetch` and the Node HTTP transports. With preload initialization, use `instrumentations: { fetch: false, http: false }`.
 

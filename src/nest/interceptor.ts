@@ -2,6 +2,7 @@ import { Observable, tap } from 'rxjs'
 import { Injectable, type CallHandler, type ExecutionContext, type NestInterceptor } from '@nestjs/common'
 import { redactSerializedBody } from '../capture-redaction.js'
 import type { InkronikClient } from '../client.js'
+import { extractGraphqlRequest, getGraphqlErrorCount } from '../graphql/extractor.js'
 import type { CaptureRequestResponseOptions, HttpLikeRequest, HttpLikeResponse, ResolvedCaptureRequestResponseOptions } from '../types.js'
 import {
     acceptsEventStream,
@@ -180,6 +181,7 @@ export class InkronikNestInterceptor implements NestInterceptor {
         const capturedRequestBody = this.captureOptions.captureRequestBody
             ? getCapturedRequestBody({ maxBodyBytes: this.captureOptions.maxBodyBytes, redaction: this.captureOptions.redaction, request })
             : undefined
+        const graphql = extractGraphqlRequest({ body: request.body, options: this.captureOptions.graphql })
 
         this.client.captureHttpExchange({
             ...captureContext,
@@ -206,6 +208,7 @@ export class InkronikNestInterceptor implements NestInterceptor {
             userId: telemetryContext.resolveUser()?.id,
             sessionId: telemetryContext.resolveSessionId(),
             attributes: this.captureOptions.getAttributes(captureContext),
+            ...(graphql === undefined ? {} : { graphql, graphqlErrorCount: getGraphqlErrorCount(responseValue) }),
             ...(isException ? { error: outcome.error } : {}),
         })
         markHttpExchangeCaptured(request)

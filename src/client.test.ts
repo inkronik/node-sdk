@@ -418,6 +418,56 @@ describe('InkronikClient', () => {
         ])
     })
 
+    test('captures GraphQL operation identity and treats response errors as span failures', async () => {
+        const { fetchImpl, requests } = createTelemetryFetch({ accepted: 6 })
+        const client = new InkronikClient({
+            collectorUrl: 'http://collector:4000',
+            ingestApiKey: 'ik_live_prefix_secret',
+            applicationId: 'application-regression',
+            serviceName: 'orders-api',
+            fetchImpl,
+            flushIntervalMs: 60_000,
+        })
+
+        client.captureHttpExchange({
+            durationMs: 18,
+            graphql: {
+                document: 'query GetOrder($id: ID!) { order(id: $id) { id } }',
+                operationName: 'GetOrder',
+                operationType: 'query',
+                persisted: false,
+            },
+            graphqlErrorCount: 1,
+            method: 'POST',
+            requestHeaders: {},
+            requestQuery: {},
+            responseHeaders: {},
+            route: '/graphql',
+            statusCode: 200,
+            url: '/graphql',
+        })
+        await client.shutdown()
+
+        const signal = getTelemetrySignals(requests[0] as FetchRequest).find(item => item.signal_type === 'span')
+
+        expect(signal?.payload).toMatchObject({
+            has_error: true,
+            operation_name: 'query GetOrder',
+            span_category: 'graphql',
+            status_code: 'error',
+            status_message: 'GraphQL response contains errors',
+            span_attributes: {
+                'graphql.document': 'query GetOrder($id: ID!) { order(id: $id) { id } }',
+                'graphql.errors.count': '1',
+                'graphql.operation.name': 'GetOrder',
+                'graphql.operation.type': 'query',
+                'http.method': 'POST',
+                'http.route': '/graphql',
+                'inkronik.request_kind': 'graphql',
+            },
+        })
+    })
+
     test('creates a client from supported environment variables', async () => {
         const { fetchImpl, requests } = createTelemetryFetch({ applicationId: 'application-env' })
 

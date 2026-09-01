@@ -76,6 +76,8 @@ const getSignals = (request: SentRequest) => {
                 readonly signal_type: string
                 readonly payload: {
                     readonly http_route?: string
+                    readonly operation_name?: string
+                    readonly has_error?: boolean
                     readonly metric_name?: string
                     readonly metric_attributes?: Record<string, string>
                     readonly event_attributes?: Record<string, string>
@@ -124,6 +126,67 @@ describe('createInkronikExpressMiddleware', () => {
         expect(capture?.payload.response_body).toBe('')
         expect(signals.find(signal => signal.payload.metric_name === 'http.server.request.size')?.payload.value).toBe(19)
         expect(signals.find(signal => signal.payload.metric_name === 'http.server.response.size')?.payload.value).toBe(0)
+    })
+
+    test('captures a named GraphQL operation and response errors from parsed JSON', async () => {
+        const { client, requests } = createTestClient()
+        const request = {
+            ...createRequest(),
+            body: {
+                operationName: 'GetOrder',
+                query: 'query GetOrder { order(id: "private-order") { id } }',
+            },
+            method: 'POST',
+            originalUrl: '/graphql',
+            route: { path: '/graphql' },
+        }
+        const { response } = createResponse()
+        const middleware = createInkronikExpressMiddleware({
+            client,
+            options: { graphql: { captureDocument: 'sanitized' } },
+        })
+
+        middleware(request, response, () => undefined)
+        response.end?.(JSON.stringify({ data: null, errors: [{ message: 'resolver failed' }] }))
+        await client.shutdown()
+
+        const span = getSignals(requests[0] as SentRequest).find(signal => signal.signal_type === 'span')
+
+        expect(span?.payload).toMatchObject({
+            has_error: true,
+            operation_name: 'query GetOrder',
+            span_attributes: {
+                'graphql.operation.name': 'GetOrder',
+                'graphql.operation.type': 'query',
+                'graphql.errors.count': '1',
+                'inkronik.request_kind': 'graphql',
+            },
+        })
+        expect(span?.payload.span_attributes?.['graphql.document']).not.toContain('private-order')
+    })
+
+    test('detects GraphQL response errors when request response capture is disabled', async () => {
+        const { client, requests } = createTestClient()
+        const request = {
+            ...createRequest(),
+            body: { operationName: 'GetOrder', query: 'query GetOrder { order { id } }' },
+            method: 'POST',
+            originalUrl: '/graphql',
+            route: { path: '/graphql' },
+        }
+        const { response } = createResponse()
+        const middleware = createInkronikExpressMiddleware({ client, options: { captureRequestResponse: false } })
+
+        middleware(request, response, () => undefined)
+        response.end?.(JSON.stringify({ data: null, errors: [{ message: 'resolver failed' }] }))
+        await client.shutdown()
+
+        const signals = getSignals(requests[0] as SentRequest)
+        const span = signals.find(signal => signal.signal_type === 'span')
+
+        expect(signals.some(signal => signal.signal_type === 'request_response_capture')).toBe(false)
+        expect(span?.payload).toMatchObject({ has_error: true, operation_name: 'query GetOrder' })
+        expect(span?.payload.span_attributes?.['graphql.errors.count']).toBe('1')
     })
 
     test('uses request user id by default when the framework attaches authenticated user context', async () => {
