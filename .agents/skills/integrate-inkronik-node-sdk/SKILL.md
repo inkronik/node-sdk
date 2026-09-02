@@ -1,6 +1,6 @@
 ---
 name: integrate-inkronik-node-sdk
-description: Integrate or audit @inkronik/node-sdk in a Node.js, Bun, or Next.js service. Use when adding Inkronik tracing, telemetry, Next.js instrumentation, HTTP adapters, authenticated user context, cron or background spans, fetch, BullMQ, PostgreSQL, Drizzle, or TypeORM instrumentation; when replacing preload with import-first initialization; or when verifying an existing server-side integration. For full-stack Next.js, also configure @inkronik/browser-sdk/next. Do not use for standalone browser-only integrations.
+description: Integrate or audit @inkronik/node-sdk in a Node.js, Bun, Next.js, or GraphQL service. Use when adding Inkronik tracing, telemetry, GraphQL operation capture, Next.js instrumentation, HTTP adapters, authenticated user context, cron or background spans, fetch, BullMQ, PostgreSQL, Drizzle, or TypeORM instrumentation; when replacing preload with import-first initialization; or when verifying an existing server-side integration. For full-stack Next.js, also configure @inkronik/browser-sdk/next. Do not use for standalone browser-only integrations.
 ---
 
 # Integrate Inkronik Node SDK
@@ -26,6 +26,8 @@ Instrument a service without silently losing HTTP, authenticated-user, backgroun
 - Preserve the existing start command unless Postgres.js requires preload or the user explicitly requests command-based initialization.
 - Keep the existing `@inkronik/node-sdk/register` entrypoint working when auditing an older integration; migrate it only when requested or when touching the initialization path.
 - Configure the appropriate Express or NestJS HTTP adapter. Do not assume the init entrypoint creates server request spans by itself.
+- When the service accepts GraphQL, configure the HTTP adapter after parsed-body middleware and verify the exact optional `graphql` peer. Preserve the HTTP route as transport context while capturing one bounded logical operation per request.
+- Keep `graphql.document` disabled unless the target repository has an explicit telemetry policy requesting searchable sanitized documents. Never enable raw document capture or copy GraphQL variables, arguments, persisted-query hashes, or result values into span attributes.
 - Treat authenticated user propagation as required whenever the service has authentication. Do not consider automatic fallback detection sufficient for a nonstandard request shape.
 - Treat database spans as required when the service accesses a supported database. Never accept a migration that silently drops them.
 - Instrument cron, scheduled, worker, startup, and other requestless work with `withSpan()` or `@InkronikSpan()`.
@@ -61,6 +63,8 @@ Add a regression test proving that:
 Verify behavior, not only compilation. Cover the applicable paths:
 
 - one HTTP request creates exactly one server span;
+- one named GraphQL request creates one operation span with its name/type and HTTP route, while an HTTP 200 response containing GraphQL errors is marked failed;
+- anonymous, persisted, malformed, and batched GraphQL envelopes follow the documented bounded fallbacks without affecting ordinary REST requests;
 - authenticated user context is retained;
 - outbound fetch and database work are children of the active request or job span;
 - a scheduled operation creates a root `scheduled` span when no request exists;

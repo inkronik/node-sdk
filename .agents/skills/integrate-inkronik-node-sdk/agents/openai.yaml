@@ -1,4 +1,4 @@
 interface:
   display_name: 'Integrate Inkronik Node SDK'
-  short_description: 'Instrument Node or Next.js with Inkronik'
-  default_prompt: 'Use $integrate-inkronik-node-sdk to instrument this Node or Next.js service and verify HTTP, user, background-job, database, and framework telemetry.'
+  short_description: 'Instrument Node, Next.js, and GraphQL services'
+  default_prompt: 'Use $integrate-inkronik-node-sdk to instrument this Node, Next.js, or GraphQL service and verify request, user, background-job, and database telemetry.'

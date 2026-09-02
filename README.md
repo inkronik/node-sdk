@@ -285,6 +285,12 @@ as `query GetOrders`, `mutation UpdateOrder`, or `subscription OrderChanged`, wh
 `POST /graphql`) remain attached as transport context. Anonymous operations, persisted queries, batches, and GraphQL responses containing an
 `errors` array have deterministic fallback/error handling. Operation names and types are the only GraphQL grouping dimensions.
 
+GraphQL services must provide the SDK's exact optional parser peer (most GraphQL frameworks already do):
+
+```sh
+bun add graphql@16.11.0
+```
+
 The existing request evidence capture continues to store a bounded, structured-redacted JSON body when enabled, which may include the query
 and redacted variables. A separate searchable document attribute is off by default. Developers can opt into an AST-sanitized document that
 removes comments and replaces every literal/default value before capture:
@@ -301,6 +307,15 @@ app.use(
 Use the same `graphql` option as the second argument to `new InkronikNestInterceptor(...)`. There is no raw document-attribute mode, and
 variables are never copied into span attributes. GraphQL parsing is exposed from `@inkronik/node-sdk/graphql` and uses the optional exact
 `graphql@16.11.0` peer; ordinary REST applications do not need to install it.
+
+Exercise the adapter with a named operation and confirm that the resulting span is `query GetOrder` while its transport remains
+`POST /graphql`:
+
+```sh
+curl http://localhost:3000/graphql \
+  --header 'content-type: application/json' \
+  --data '{"operationName":"GetOrder","query":"query GetOrder($id: ID!) { order(id: $id) { id status } }","variables":{"id":"order_123"}}'
+```
 
 Pass `{ autoInstrumentFetch: false, autoInstrumentHttp: false }` to the Express middleware or NestJS interceptor options when another tracer
 already owns global `fetch` and the Node HTTP transports. With preload initialization, use `instrumentations: { fetch: false, http: false }`.

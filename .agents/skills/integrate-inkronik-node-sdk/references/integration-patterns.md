@@ -133,6 +133,56 @@ app.use(
 
 The resolver is evaluated lazily. The Inkronik middleware may start tracing before authentication middleware as long as authentication attaches the principal before handlers emit events and before the response finishes.
 
+## GraphQL request operations
+
+Use this path when an Express or NestJS service accepts GraphQL JSON envelopes. The adapter needs a parsed `request.body`, so register `express.json()` or the framework body parser before Inkronik. Verify that the service has the SDK's exact optional parser peer:
+
+```sh
+bun add graphql@16.11.0
+```
+
+GraphQL document attributes are disabled by default. Named operations still produce `graphql.operation.name`, `graphql.operation.type`, and a logical label such as `query GetOrder`; the original method and route remain available as transport context.
+
+Enable searchable document structure only when the application's telemetry policy explicitly permits it:
+
+```ts
+app.use(express.json())
+app.use(
+    createInkronikExpressMiddleware({
+        client: getDefaultInkronikClient(),
+        options: {
+            graphql: {
+                captureDocument: 'sanitized',
+                maxDocumentBytes: 4_096,
+            },
+        },
+    }),
+)
+```
+
+For NestJS, pass the same option to the global interceptor:
+
+```ts
+new InkronikNestInterceptor(getDefaultInkronikClient(), {
+    graphql: {
+        captureDocument: 'sanitized',
+        maxDocumentBytes: 4_096,
+    },
+})
+```
+
+Exercise the integration with a real named request rather than checking configuration only:
+
+```sh
+curl http://localhost:3000/graphql \
+  --header 'content-type: application/json' \
+  --data '{"operationName":"GetOrder","query":"query GetOrder($id: ID!) { order(id: $id) { id status } }","variables":{"id":"order_123"}}'
+```
+
+Verify one server span named `query GetOrder`, `graphql.operation.name=GetOrder`, `graphql.operation.type=query`, and the original `POST /graphql` transport. A response containing an `errors` array must mark the operation failed even with HTTP 200. Also verify deterministic anonymous, persisted, malformed, and batch behavior when the target service accepts those request shapes.
+
+Sanitized capture removes comments and literal/default values. Variables remain only in the existing bounded and redacted request evidence; never copy them, arguments, result values, or persisted-query hashes into span attributes. Do not add a raw document mode.
+
 ## Scheduled and background work
 
 For NestJS scheduled methods:
