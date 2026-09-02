@@ -42,6 +42,7 @@ import type {
     WithSpanInput,
 } from './types.js'
 import type { IngestTelemetryRequest, IngestTelemetryResponse, IngestTelemetrySignal } from './protocol/types.js'
+import type { CapturedGraphqlRequest } from './graphql/types.js'
 import { getDatabaseOperation, normalizeDatabaseStatement } from './database.js'
 import { getHttpHeaderValue, resolveHttpMessageSize } from './http-utils.js'
 import { redactLogAttributes, redactLogText, resolveLogRedactionOptions } from './log-redaction.js'
@@ -88,6 +89,36 @@ const DEFAULT_FUNCTION_SPAN_CATEGORY = 'internal'
 const DEFAULT_FUNCTION_SPAN_KIND = 'internal'
 const MAX_EVENT_MESSAGE_BYTES = 4096
 const emptyCapturedError = { type: '', message: '', stack: '', code: '', handled: false } as const
+
+const getGraphqlOperationLabel = (graphql: CapturedGraphqlRequest): string => {
+    if (graphql.batchCount !== undefined) {
+        return 'GraphQL batch'
+    }
+
+    if (graphql.operationName !== undefined && graphql.operationType !== 'unknown') {
+        return `${graphql.operationType} ${graphql.operationName}`
+    }
+
+    if (graphql.operationName !== undefined) {
+        return `GraphQL ${graphql.operationName}`
+    }
+
+    return graphql.operationType === 'unknown' ? 'Anonymous persisted operation' : `Anonymous ${graphql.operationType}`
+}
+
+const getGraphqlSpanAttributes = (graphql: CapturedGraphqlRequest | undefined): Record<string, string> => {
+    if (graphql === undefined) {
+        return {}
+    }
+
+    return {
+        ...(graphql.operationName === undefined ? {} : { 'graphql.operation.name': graphql.operationName }),
+        ...(graphql.operationType === 'unknown' ? {} : { 'graphql.operation.type': graphql.operationType }),
+        ...(graphql.document === undefined ? {} : { 'graphql.document': graphql.document }),
+        ...(graphql.batchCount === undefined ? {} : { 'inkronik.graphql.batch_count': String(graphql.batchCount) }),
+        'inkronik.graphql.persisted': String(graphql.persisted),
+    }
+}
 
 const severityByLevel: Record<string, SeverityDefinition> = {
     trace: { number: 1, text: 'TRACE' },
@@ -362,9 +393,10 @@ export class InkronikClient {
     captureHttpExchange(input: CaptureHttpExchangeInput): void {
         const traceContext = this.resolveTraceContext(input)
         const route = input.route.length > 0 ? input.route : input.url
-        const requestKind = input.requestKind ?? 'http'
+        const requestKind = input.graphql === undefined ? (input.requestKind ?? 'http') : 'graphql'
         const capturedError = input.error === undefined ? undefined : normalizeCapturedError(input.error)
-        const hasError = input.statusCode >= 400 || capturedError !== undefined
+        const hasGraphqlError = (input.graphqlErrorCount ?? 0) > 0
+        const hasError = input.statusCode >= 400 || capturedError !== undefined || hasGraphqlError
         const requestAccept = getHttpHeaderValue({ headers: input.requestHeaders, name: 'accept' })
         const responseContentType = getHttpHeaderValue({ headers: input.responseHeaders, name: 'content-type' })
         const requestSizeBytes = resolveHttpMessageSize({
@@ -383,6 +415,8 @@ export class InkronikClient {
         }
         const commonAttributes = {
             ...(input.attributes ?? {}),
+            ...getGraphqlSpanAttributes(input.graphql),
+            ...(hasGraphqlError ? { 'graphql.errors.count': String(input.graphqlErrorCount) } : {}),
             ...(capturedError === undefined
                 ? {}
                 : {
@@ -416,11 +450,11 @@ export class InkronikClient {
                 end_time: nowIso(),
                 duration_us: Math.max(0, Math.round(input.durationMs * 1000)),
                 service_name: this.serviceName,
-                operation_name: `${input.method} ${route}`,
+                operation_name: input.graphql === undefined ? `${input.method} ${route}` : getGraphqlOperationLabel(input.graphql),
                 span_kind: 'server',
-                span_category: 'http',
+                span_category: input.graphql === undefined ? 'http' : 'graphql',
                 status_code: hasError ? 'error' : 'ok',
-                status_message: capturedError?.message ?? '',
+                status_message: capturedError?.message ?? (hasGraphqlError ? 'GraphQL response contains errors' : ''),
                 has_error: hasError,
                 http_method: input.method,
                 http_route: route,

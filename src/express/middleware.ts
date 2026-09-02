@@ -1,4 +1,5 @@
 import { redactCapturedBody } from '../capture-redaction.js'
+import { extractGraphqlRequest, getGraphqlErrorCount } from '../graphql/extractor.js'
 import type { CreateInkronikExpressMiddlewareInput } from '../internal/types.js'
 import type { HttpLikeNext, HttpLikeRequest, HttpLikeResponse } from '../types.js'
 import {
@@ -51,6 +52,8 @@ export const createInkronikExpressMiddleware = ({ client, options = {} }: Create
         const startedAt = performance.now()
         const traceContext = getRequestTraceContext(request)
         const telemetryContext = buildRequestTelemetryContext({ options: captureOptions, request, response, traceContext })
+        const graphql = extractGraphqlRequest({ body: request.body, options: captureOptions.graphql })
+        const shouldInspectResponseBody = captureOptions.captureRequestResponse || graphql !== undefined
         const responseBody = { value: '' }
         const responseSizeBytes = { value: 0 }
         const originalWrite = response.write
@@ -63,7 +66,7 @@ export const createInkronikExpressMiddleware = ({ client, options = {} }: Create
                 responseSizeBytes.value += getBodyChunkSizeBytes(chunk)
 
                 // eslint-disable-next-line functional/immutable-data
-                responseBody.value = captureOptions.captureRequestResponse
+                responseBody.value = shouldInspectResponseBody
                     ? appendBodyChunk({
                           chunk,
                           maxBytes: captureOptions.maxBodyBytes,
@@ -91,7 +94,7 @@ export const createInkronikExpressMiddleware = ({ client, options = {} }: Create
                 responseSizeBytes.value += getBodyChunkSizeBytes(chunk)
 
                 // eslint-disable-next-line functional/immutable-data
-                responseBody.value = captureOptions.captureRequestResponse
+                responseBody.value = shouldInspectResponseBody
                     ? appendBodyChunk({
                           chunk,
                           maxBytes: captureOptions.maxBodyBytes,
@@ -111,7 +114,6 @@ export const createInkronikExpressMiddleware = ({ client, options = {} }: Create
                     const capturedRequestBody = captureOptions.captureRequestBody
                         ? getCapturedRequestBody({ maxBodyBytes: captureOptions.maxBodyBytes, redaction: captureOptions.redaction, request })
                         : undefined
-
                     client.captureHttpExchange({
                         ...context,
                         route,
@@ -141,6 +143,7 @@ export const createInkronikExpressMiddleware = ({ client, options = {} }: Create
                         userId: telemetryContext.resolveUser()?.id,
                         sessionId: telemetryContext.resolveSessionId(),
                         attributes: captureOptions.getAttributes(context),
+                        ...(graphql === undefined ? {} : { graphql, graphqlErrorCount: getGraphqlErrorCount(responseBody.value) }),
                     })
                     markHttpExchangeCaptured(request)
                 }

@@ -34,6 +34,7 @@ import type {
 import { createRootTraceContext, parseTraceparent } from './trace-context.js'
 import { isSensitiveCaptureField, redactSensitiveCaptureText } from './capture-redaction.js'
 import { captureBodyValue } from './capture-serializer.js'
+import { resolveGraphqlCaptureOptions } from './graphql/extractor.js'
 import { safeJsonByteLength, toStringMap, truncateUtf8, utf8ByteLength } from './utils.js'
 
 const DEFAULT_MAX_BODY_BYTES = 16_384
@@ -548,6 +549,7 @@ export const resolveCaptureOptions = (options: CaptureRequestResponseOptions = {
     getRoute: options.getRoute ?? (context => context.route),
     getRequestKind: options.getRequestKind ?? inferHttpRequestKind,
     getAttributes: options.getAttributes ?? (() => ({})),
+    graphql: resolveGraphqlCaptureOptions(options.graphql),
     redaction: {
         fieldNames: options.redaction?.fieldNames ?? [],
         fieldPatterns: options.redaction?.fieldPatterns ?? [],

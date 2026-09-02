@@ -20,6 +20,7 @@
         "brace-expansion": "5.0.9",
         "eslint": "10.8.1",
         "eslint-config-codemask": "2.2.1",
+        "graphql": "16.11.0",
         "ip-address": "10.5.0",
         "next": "16.3.3",
         "pg": "8.23.0",
@@ -33,12 +34,14 @@
       },
       "peerDependencies": {
         "@nestjs/common": "11.1.29",
+        "graphql": "16.11.0",
         "pg": "8.23.0",
         "postgres": "3.4.9",
         "rxjs": "7.8.2",
       },
       "optionalPeers": [
         "@nestjs/common",
+        "graphql",
         "pg",
         "postgres",
         "rxjs",
@@ -634,6 +637,8 @@
     "globalthis": ["globalthis@1.0.4", "", { "dependencies": { "define-properties": "^1.2.1", "gopd": "^1.0.1" } }, "sha512-DpLKbNU4WylpxJykQujfCcwYWiV/Jhm50Goo0wrVILAv5jOr9d+H+UR3PhSCD2rCCEIg0uc+G+muBTwD54JhDQ=="],
 
     "gopd": ["gopd@1.2.0", "", {}, "sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg=="],
+
+    "graphql": ["graphql@16.11.0", "", {}, "sha512-mS1lbMsxgQj6hge1XZ6p7GPhbrtFwUFYi3wRzXAC/FmYnyXMTvvI3td3rjmQ2u8ewXueaSvRPWaEcgVVOT9Jnw=="],
 
     "has-bigints": ["has-bigints@1.1.0", "", {}, "sha512-R3pbpkcIqv2Pm3dUwgjclDRVmWpTJW2DcMzcIhEXEx1oh/CEMObMm3KLmRJOdvhM7o4uQBnwr8pzRK2sJWIqfg=="],
 

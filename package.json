@@ -16,6 +16,9 @@
       "express": [
         "dist/express/index.d.ts"
       ],
+      "graphql": [
+        "dist/graphql/index.d.ts"
+      ],
       "nest": [
         "dist/nest/index.d.ts"
       ],
@@ -70,6 +73,17 @@
       },
       "default": "./dist/express/index.js"
     },
+    "./graphql": {
+      "import": {
+        "types": "./dist/graphql/index.d.ts",
+        "default": "./dist/graphql/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/graphql/index.d.cts",
+        "default": "./dist/cjs/graphql/index.cjs"
+      },
+      "default": "./dist/graphql/index.js"
+    },
     "./init": {
       "import": {
         "types": "./dist/register.d.ts",
@@ -121,8 +135,8 @@
     "build": "bun run build:clean && bun run build:js && bun run build:types && bun run build:types:cjs && bun run check:exports && bun run check:runtime && bun run check:types:consumers && bun run check:next",
     "build:clean": "bun scripts/clean.ts",
     "build:js": "bun run build:js:esm && bun run build:js:cjs",
-    "build:js:esm": "bun build src/index.ts src/auto.ts src/express/index.ts src/nest/index.ts src/next/index.ts src/register.ts --root=src --outdir=dist --target=node --format=esm --splitting --sourcemap=linked --external=@nestjs/common --external=@opentelemetry/api --external=@opentelemetry/resources --external=@opentelemetry/sdk-trace-base --external=@opentelemetry/sdk-trace-node --external=@opentelemetry/semantic-conventions --external=postgres --external=rxjs --allow-unresolved='<empty>'",
-    "build:js:cjs": "bun build src/index.ts src/auto.ts src/express/index.ts src/nest/index.ts src/next/index.ts src/register.ts --root=src --outdir=dist/cjs --target=node --format=cjs --entry-naming='[dir]/[name].cjs' --sourcemap=linked --external=@nestjs/common --external=@opentelemetry/api --external=@opentelemetry/resources --external=@opentelemetry/sdk-trace-base --external=@opentelemetry/sdk-trace-node --external=@opentelemetry/semantic-conventions --external=postgres --external=rxjs --allow-unresolved='<empty>'",
+    "build:js:esm": "bun build src/index.ts src/auto.ts src/express/index.ts src/graphql/index.ts src/nest/index.ts src/next/index.ts src/register.ts --root=src --outdir=dist --target=node --format=esm --splitting --sourcemap=linked --external=@nestjs/common --external=@opentelemetry/api --external=@opentelemetry/resources --external=@opentelemetry/sdk-trace-base --external=@opentelemetry/sdk-trace-node --external=@opentelemetry/semantic-conventions --external=graphql --external=postgres --external=rxjs --allow-unresolved='<empty>'",
+    "build:js:cjs": "bun build src/index.ts src/auto.ts src/express/index.ts src/graphql/index.ts src/nest/index.ts src/next/index.ts src/register.ts --root=src --outdir=dist/cjs --target=node --format=cjs --entry-naming='[dir]/[name].cjs' --sourcemap=linked --external=@nestjs/common --external=@opentelemetry/api --external=@opentelemetry/resources --external=@opentelemetry/sdk-trace-base --external=@opentelemetry/sdk-trace-node --external=@opentelemetry/semantic-conventions --external=graphql --external=postgres --external=rxjs --allow-unresolved='<empty>'",
     "build:types": "bun tsc --project tsconfig.build.json",
     "build:types:cjs": "node scripts/build-cjs-declarations.mjs",
     "check:exports": "node scripts/check-package-exports.mjs",
@@ -166,12 +180,16 @@
   },
   "peerDependencies": {
     "@nestjs/common": "11.1.29",
+    "graphql": "16.11.0",
     "pg": "8.23.0",
     "postgres": "3.4.9",
     "rxjs": "7.8.2"
   },
   "peerDependenciesMeta": {
     "@nestjs/common": {
+      "optional": true
+    },
+    "graphql": {
       "optional": true
     },
     "pg": {
@@ -193,6 +211,7 @@
     "brace-expansion": "5.0.9",
     "eslint": "10.8.1",
     "eslint-config-codemask": "2.2.1",
+    "graphql": "16.11.0",
     "ip-address": "10.5.0",
     "next": "16.3.3",
     "pg": "8.23.0",
