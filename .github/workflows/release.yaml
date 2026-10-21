@@ -29,7 +29,7 @@ env:
 
 jobs:
   prepare-and-verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     outputs:
       source_sha: ${{ steps.source.outputs.source_sha }}
@@ -154,7 +154,7 @@ jobs:
   create-github-release:
     if: ${{ !inputs.dry_run }}
     needs: prepare-and-verify
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: write
@@ -205,7 +205,7 @@ jobs:
       - prepare-and-verify
       - create-github-release
     environment: npm
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: read
