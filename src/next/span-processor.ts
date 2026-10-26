@@ -1,5 +1,5 @@
 import type { Context, Span } from '@opentelemetry/api'
-import type { ReadableSpan } from '@opentelemetry/sdk-trace-base'
+import type { ReadableSpan } from '@opentelemetry/sdk-trace'
 import { DEFAULT_HTTP_DURATION_BUCKETS_MS } from './constants.js'
 import { mapReadableSpan } from './span-mapping.js'
 import type { InkronikNextSpanProcessorContract, InkronikNextSpanProcessorOptions, MappedNextSpan } from './types.js'

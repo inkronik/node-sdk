@@ -1,6 +1,8 @@
-import { isSpanContextValid, trace } from '@opentelemetry/api'
+import { context, isSpanContextValid, propagation, trace } from '@opentelemetry/api'
+import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks'
+import { CompositePropagator, W3CBaggagePropagator, W3CTraceContextPropagator } from '@opentelemetry/core'
 import { resourceFromAttributes } from '@opentelemetry/resources'
-import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node'
+import { TracerProvider } from '@opentelemetry/sdk-trace'
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions'
 import { initInkronik, shutdownInkronik } from '../auto.js'
 import { setExternalTraceContextResolver } from '../trace-context.js'
@@ -44,12 +46,14 @@ const createRegistration = (options: RegisterInkronikNextOptions): NextRegistrat
             ? {}
             : { [ATTR_SERVICE_VERSION]: options.serviceVersion ?? environment.INKRONIK_SERVICE_VERSION }),
     }
-    const provider = new NodeTracerProvider({
+    const provider = new TracerProvider({
         resource: resourceFromAttributes(resourceAttributes),
         spanProcessors: [processor],
     })
 
-    provider.register()
+    trace.setGlobalTracerProvider(provider)
+    context.setGlobalContextManager(new AsyncLocalStorageContextManager().enable())
+    propagation.setGlobalPropagator(new CompositePropagator({ propagators: [new W3CTraceContextPropagator(), new W3CBaggagePropagator()] }))
     const restoreTraceContextResolver = setExternalTraceContextResolver(() => {
         const context = trace.getActiveSpan()?.spanContext()
 

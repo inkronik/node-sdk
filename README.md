@@ -8,7 +8,11 @@ Telemetry SDK for sending Node.js and Bun application signals to the Inkronik Co
 bun add @inkronik/node-sdk
 ```
 
-The package requires Node.js 20 or newer. Bun is supported for preload-based automatic PostgreSQL instrumentation.
+The package requires Node.js 22.15.0 or newer. Bun is supported for preload-based automatic PostgreSQL instrumentation.
+
+Breaking change: Node.js 20 and Node.js versions below 22.15.0 are no longer supported. The Next.js integration now uses OpenTelemetry 3 with explicit asynchronous context and W3C trace-context/baggage propagation. Span and resource attributes retain Inkronik's string-valued protocol: scalar values and homogeneous primitive arrays are serialized; nested objects, byte arrays, and other complex values are omitted. Query data is still removed and attribute count/value limits still apply.
+
+OpenTelemetry 3's trace provider no longer reads `OTEL_TRACES_SAMPLER`, `OTEL_TRACES_SAMPLER_ARG`, or `OTEL_ATTRIBUTE_*`/`OTEL_SPAN_*` limits from the environment. Inkronik's documented `INKRONIK_*` configuration remains unchanged.
 
 Both ESM `import` and CommonJS `require()` are supported. Applications may load the core, preload, Express, and NestJS entrypoints
 independently; they share one process-level client and trace context so child spans remain correlated across package entrypoints.
