@@ -132,11 +132,11 @@
   },
   "scripts": {
     "benchmark:memory": "bun --expose-gc scripts/memory-benchmark.ts",
-    "build": "bun run build:clean && bun run build:js && bun run build:types && bun run build:types:cjs && bun run check:exports && bun run check:runtime && bun run check:types:consumers && bun run check:next",
+    "build": "bun run build:clean && bun run build:js && bun run build:types && bun run build:types:cjs && bun run check:exports && bun run check:runtime && bun run check:runtime:next && bun run check:types:consumers && bun run check:next",
     "build:clean": "bun scripts/clean.ts",
     "build:js": "bun run build:js:esm && bun run build:js:cjs",
-    "build:js:esm": "bun build src/index.ts src/auto.ts src/express/index.ts src/graphql/index.ts src/nest/index.ts src/next/index.ts src/register.ts --root=src --outdir=dist --target=node --format=esm --splitting --sourcemap=linked --external=@nestjs/common --external=@opentelemetry/api --external=@opentelemetry/resources --external=@opentelemetry/sdk-trace-base --external=@opentelemetry/sdk-trace-node --external=@opentelemetry/semantic-conventions --external=graphql --external=postgres --external=rxjs --allow-unresolved='<empty>'",
-    "build:js:cjs": "bun build src/index.ts src/auto.ts src/express/index.ts src/graphql/index.ts src/nest/index.ts src/next/index.ts src/register.ts --root=src --outdir=dist/cjs --target=node --format=cjs --entry-naming='[dir]/[name].cjs' --sourcemap=linked --external=@nestjs/common --external=@opentelemetry/api --external=@opentelemetry/resources --external=@opentelemetry/sdk-trace-base --external=@opentelemetry/sdk-trace-node --external=@opentelemetry/semantic-conventions --external=graphql --external=postgres --external=rxjs --allow-unresolved='<empty>'",
+    "build:js:esm": "bun build src/index.ts src/auto.ts src/express/index.ts src/graphql/index.ts src/nest/index.ts src/next/index.ts src/register.ts --root=src --outdir=dist --target=node --format=esm --splitting --sourcemap=linked --external=@nestjs/common --external=@opentelemetry/api --external=@opentelemetry/resources --external=@opentelemetry/context-async-hooks --external=@opentelemetry/core --external=@opentelemetry/sdk-trace --external=@opentelemetry/semantic-conventions --external=graphql --external=postgres --external=rxjs --allow-unresolved='<empty>'",
+    "build:js:cjs": "bun build src/index.ts src/auto.ts src/express/index.ts src/graphql/index.ts src/nest/index.ts src/next/index.ts src/register.ts --root=src --outdir=dist/cjs --target=node --format=cjs --entry-naming='[dir]/[name].cjs' --sourcemap=linked --external=@nestjs/common --external=@opentelemetry/api --external=@opentelemetry/resources --external=@opentelemetry/context-async-hooks --external=@opentelemetry/core --external=@opentelemetry/sdk-trace --external=@opentelemetry/semantic-conventions --external=graphql --external=postgres --external=rxjs --allow-unresolved='<empty>'",
     "build:types": "bun tsc --project tsconfig.build.json",
     "build:types:cjs": "node scripts/build-cjs-declarations.mjs",
     "check:exports": "node scripts/check-package-exports.mjs",
@@ -148,10 +148,11 @@
     "pack:check": "npm pack --dry-run",
     "release:version": "release-it --release-version --ci",
     "test": "bun test ./src",
-    "typecheck": "bun tsc --noEmit --project tsconfig.json"
+    "typecheck": "bun tsc --noEmit --project tsconfig.json",
+    "check:runtime:next": "node scripts/check-next-provider-runtime.mjs cjs && node scripts/check-next-provider-runtime.mjs esm && bun scripts/check-next-provider-runtime.mjs cjs && bun scripts/check-next-provider-runtime.mjs esm"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.15.0"
   },
   "repository": {
     "type": "git",
@@ -213,8 +214,8 @@
     "eslint": "10.13.0",
     "eslint-config-codemask": "2.2.1",
     "graphql": "16.14.2",
-    "ip-address": "10.7.4",
-    "next": "16.4.2",
+    "ip-address": "10.7.5",
+    "next": "16.4.3",
     "pg": "8.23.1",
     "postgres": "3.4.9",
     "prettier": "3.9.10",
@@ -232,9 +233,10 @@
   },
   "dependencies": {
     "@opentelemetry/api": "1.10.0",
-    "@opentelemetry/resources": "2.12.0",
-    "@opentelemetry/sdk-trace-base": "2.12.0",
-    "@opentelemetry/sdk-trace-node": "2.12.0",
+    "@opentelemetry/context-async-hooks": "3.0.0",
+    "@opentelemetry/core": "3.0.0",
+    "@opentelemetry/resources": "3.0.0",
+    "@opentelemetry/sdk-trace": "3.0.0",
     "@opentelemetry/semantic-conventions": "1.43.0"
   }
 }

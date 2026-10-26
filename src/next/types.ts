@@ -1,6 +1,5 @@
 import type { Attributes, Context, HrTime, Span } from '@opentelemetry/api'
-import type { ReadableSpan, SpanProcessor } from '@opentelemetry/sdk-trace-base'
-import type { NodeTracerProvider } from '@opentelemetry/sdk-trace-node'
+import type { ReadableSpan, SpanProcessor, TracerProvider } from '@opentelemetry/sdk-trace'
 import type { InkronikClient } from '../client.js'
 import type { CaptureSpanInput, InitInkronikOptions } from '../types.js'
 
@@ -41,7 +40,7 @@ export interface MappedNextSpan {
 
 export interface NextRegistration {
     readonly client: InkronikClient
-    readonly provider: NodeTracerProvider
+    readonly provider: TracerProvider
     readonly restoreTraceContextResolver: () => void
 }
 

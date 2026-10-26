@@ -1,4 +1,5 @@
-import { SpanKind, SpanStatusCode, type AttributeValue } from '@opentelemetry/api'
+import { SpanKind, SpanStatusCode } from '@opentelemetry/api'
+import { isSimpleAttributeValue } from '@opentelemetry/core'
 import {
     ATTR_DB_SYSTEM_NAME,
     ATTR_HTTP_REQUEST_METHOD,
@@ -28,8 +29,8 @@ const NEXT_SPAN_TYPE = 'next.span_type'
 const PEER_SERVICE = 'peer.service'
 const URL_QUERY = 'url.query'
 
-const serializeAttributeValue = (value: AttributeValue | undefined): string => {
-    if (value === undefined) {
+const serializeAttributeValue = (value: unknown): string => {
+    if (!isSimpleAttributeValue(value)) {
         return ''
     }
 
@@ -40,7 +41,7 @@ const serializeAttributeValue = (value: AttributeValue | undefined): string => {
 export const serializeAttributes = ({ attributes }: SerializeAttributesInput): Record<string, string> =>
     Object.fromEntries(
         Object.entries(attributes)
-            .filter(([key]) => key !== URL_QUERY)
+            .filter(([key, value]) => key !== URL_QUERY && isSimpleAttributeValue(value))
             .slice(0, MAX_ATTRIBUTE_COUNT)
             .map(([key, value]) => {
                 const serialized = serializeAttributeValue(value)
