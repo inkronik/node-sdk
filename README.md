@@ -450,6 +450,12 @@ createInkronikExpressMiddleware({
 })
 ```
 
+## Repository development
+
+The SDK declaration build and modern consumer checks use TypeScript 7 (`tsc`, provided by the `@typescript/native` alias). ESLint and Next.js load the TypeScript 6 compatibility API through the `typescript` alias, following [Microsoft's side-by-side setup](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/#running-side-by-side-with-typescript-6.0).
+
+The legacy Node module-resolution consumer check uses `tsc6`, because TypeScript 7 removed that resolution mode. Its deprecation is acknowledged only in that fixture; the imports and strict type assertions remain checked. Keep both compiler aliases pinned when updating this toolchain.
+
 ## License
 
 MIT License. See [LICENSE](./LICENSE).

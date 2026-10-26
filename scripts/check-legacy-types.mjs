@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 const projectDirectory = fileURLToPath(new URL('..', import.meta.url))
 const consumerDirectory = await mkdtemp(join(tmpdir(), 'inkronik-node-sdk-legacy-consumer-'))
 const packagePath = join(consumerDirectory, 'node_modules', '@inkronik', 'node-sdk')
-const typescriptPath = join(projectDirectory, 'node_modules', 'typescript', 'bin', 'tsc')
+const typescriptPath = join(projectDirectory, 'node_modules', 'typescript', 'bin', 'tsc6')
 const consumerSource = `
 import '@inkronik/node-sdk/init'
 import { getDefaultInkronikClient, type InkronikClient } from '@inkronik/node-sdk'
@@ -29,7 +29,9 @@ const tsconfig = {
     compilerOptions: {
         esModuleInterop: true,
         module: 'CommonJS',
+        // Keep testing legacy Node resolution with the compatibility compiler.
         moduleResolution: 'Node',
+        ignoreDeprecations: '6.0',
         noEmit: true,
         skipLibCheck: true,
         strict: true,
