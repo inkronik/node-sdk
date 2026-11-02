@@ -213,7 +213,7 @@
     "brace-expansion": "5.0.12",
     "eslint": "10.13.0",
     "eslint-config-codemask": "2.2.1",
-    "graphql": "16.14.2",
+    "graphql": "17.0.2",
     "ip-address": "10.7.5",
     "next": "16.4.3",
     "pg": "8.23.1",
