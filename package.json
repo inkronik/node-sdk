@@ -183,7 +183,7 @@
     "@nestjs/common": "11.1.29",
     "graphql": "16.11.0",
     "pg": "8.23.0",
-    "postgres": "3.4.9",
+    "postgres": "4.0.0",
     "rxjs": "7.8.2"
   },
   "peerDependenciesMeta": {
@@ -217,7 +217,7 @@
     "ip-address": "10.7.5",
     "next": "16.4.3",
     "pg": "8.23.1",
-    "postgres": "3.4.9",
+    "postgres": "4.0.0",
     "prettier": "3.9.10",
     "react": "19.3.1",
     "react-dom": "19.3.1",
