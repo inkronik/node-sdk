@@ -336,6 +336,8 @@ TypeORM does not need Inkronik-specific database configuration. Its existing `pg
 
 ### Postgres.js / Drizzle
 
+The Postgres.js instrumentation supports `postgres@3.4.9` and `postgres@4.0.0`.
+
 With the Bun preload agent, application database code remains unchanged:
 
 ```ts

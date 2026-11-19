@@ -750,7 +750,7 @@ export class InkronikClient {
         })
     }
 
-    instrumentPostgres<TSql extends PostgresJsSql>({ sql, ...options }: InstrumentPostgresInput<TSql>): TSql {
+    instrumentPostgres<TSql extends PostgresJsSql<string | null>>({ sql, ...options }: InstrumentPostgresInput<TSql>): TSql {
         if (Reflect.get(sql, INKRONIK_INSTRUMENTED_POSTGRES) === true) {
             return sql
         }
