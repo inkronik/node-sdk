@@ -289,10 +289,11 @@ as `query GetOrders`, `mutation UpdateOrder`, or `subscription OrderChanged`, wh
 `POST /graphql`) remain attached as transport context. Anonymous operations, persisted queries, batches, and GraphQL responses containing an
 `errors` array have deterministic fallback/error handling. Operation names and types are the only GraphQL grouping dimensions.
 
-GraphQL services must provide the SDK's exact optional parser peer (most GraphQL frameworks already do):
+GraphQL services must provide one of the SDK's supported parser versions: `graphql@16.11.0` or `graphql@17.0.2`.
+Most GraphQL frameworks already provide the parser.
 
 ```sh
-bun add graphql@16.11.0
+bun add graphql@17.0.2
 ```
 
 The existing request evidence capture continues to store a bounded, structured-redacted JSON body when enabled, which may include the query
@@ -309,8 +310,8 @@ app.use(
 ```
 
 Use the same `graphql` option as the second argument to `new InkronikNestInterceptor(...)`. There is no raw document-attribute mode, and
-variables are never copied into span attributes. GraphQL parsing is exposed from `@inkronik/node-sdk/graphql` and uses the optional exact
-`graphql@16.11.0` peer; ordinary REST applications do not need to install it.
+variables are never copied into span attributes. GraphQL parsing is exposed from `@inkronik/node-sdk/graphql` and uses the optional parser peer.
+Ordinary REST applications do not need to install it.
 
 Exercise the adapter with a named operation and confirm that the resulting span is `query GetOrder` while its transport remains
 `POST /graphql`:
