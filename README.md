@@ -234,7 +234,7 @@ app.use(createInkronikExpressMiddleware({ client: inkronik }))
 
 ## NestJS
 
-The NestJS adapter supports `@nestjs/common` versions `11.1.29`, `12.3.2`, and `12.5.0`.
+The NestJS adapter supports `@nestjs/common` versions `11.1.29`, `12.3.2`, `12.5.0`, and `12.5.1`.
 
 ```ts
 import { APP_INTERCEPTOR } from '@nestjs/core'
@@ -329,7 +329,7 @@ already owns global `fetch` and the Node HTTP transports. With preload initializ
 
 ## PostgreSQL
 
-The SDK supports two PostgreSQL drivers with different initialization requirements:
+The SDK supports `pg` versions `8.23.0` and `8.23.1`. The two PostgreSQL drivers have different initialization requirements:
 
 - `pg` works with import-first initialization for TypeORM, Drizzle's `node-postgres` driver, direct `Client` queries, and direct `Pool`
   queries;
