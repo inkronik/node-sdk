@@ -443,27 +443,27 @@ export interface DatabaseInstrumentationOptions {
     readonly system?: string
 }
 
-export interface PostgresJsClientOptions {
-    readonly database?: string
+export interface PostgresJsClientOptions<TDatabase extends string | null = string> {
+    readonly database?: TDatabase
 }
 
-export interface PostgresJsSql {
+export interface PostgresJsSql<TDatabase extends string | null = string> {
     (strings: TemplateStringsArray, ...values: ReadonlyArray<unknown>): unknown
-    readonly options?: PostgresJsClientOptions
+    readonly options?: PostgresJsClientOptions<TDatabase>
 }
 
-export interface InstrumentPostgresInput<TSql extends PostgresJsSql = PostgresJsSql> extends DatabaseInstrumentationOptions {
+export interface InstrumentPostgresInput<TSql extends PostgresJsSql<string | null> = PostgresJsSql> extends DatabaseInstrumentationOptions {
     readonly sql: TSql
 }
 
-export interface PostgresAutoInstrumentationClient {
-    instrumentPostgres<TSql extends PostgresJsSql>(input: InstrumentPostgresInput<TSql>): TSql
+export interface PostgresAutoInstrumentationClient<TDatabase extends string | null = string> {
+    instrumentPostgres<TSql extends PostgresJsSql<TDatabase>>(input: InstrumentPostgresInput<TSql>): TSql
 }
 
-export type PostgresAutoInstrumentationHook = (sql: PostgresJsSql) => PostgresJsSql
+export type PostgresAutoInstrumentationHook<TDatabase extends string | null = string> = (sql: PostgresJsSql<TDatabase>) => PostgresJsSql<TDatabase>
 
-export interface StartPostgresAutoInstrumentationInput {
-    readonly client: PostgresAutoInstrumentationClient
+export interface StartPostgresAutoInstrumentationInput<TDatabase extends string | null = string> {
+    readonly client: PostgresAutoInstrumentationClient<TDatabase>
     readonly options: DatabaseInstrumentationOptions
 }
 

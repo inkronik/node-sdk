@@ -47,12 +47,12 @@ const registerBunPostgresPlugin = (): void => {
     }
 }
 
-export const startPostgresAutoInstrumentation = ({ client, options }: StartPostgresAutoInstrumentationInput): (() => void) => {
+export const startPostgresAutoInstrumentation = ({ client, options }: StartPostgresAutoInstrumentationInput<string | null>): (() => void) => {
     registerBunPostgresPlugin()
 
     const runtimeState = getRuntimeState()
-    const instrument: PostgresAutoInstrumentationHook = sql => {
-        const databaseName = options.databaseName ?? sql.options?.database
+    const instrument: PostgresAutoInstrumentationHook<string | null> = sql => {
+        const databaseName = options.databaseName ?? sql.options?.database ?? undefined
 
         try {
             return client.instrumentPostgres({
