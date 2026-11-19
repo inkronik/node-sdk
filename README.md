@@ -234,7 +234,7 @@ app.use(createInkronikExpressMiddleware({ client: inkronik }))
 
 ## NestJS
 
-The NestJS adapter supports `@nestjs/common@11.1.29` and `@nestjs/common@12.3.2`.
+The NestJS adapter supports `@nestjs/common` versions `11.1.29`, `12.3.2`, and `12.5.0`.
 
 ```ts
 import { APP_INTERCEPTOR } from '@nestjs/core'
@@ -291,11 +291,11 @@ as `query GetOrders`, `mutation UpdateOrder`, or `subscription OrderChanged`, wh
 `POST /graphql`) remain attached as transport context. Anonymous operations, persisted queries, batches, and GraphQL responses containing an
 `errors` array have deterministic fallback/error handling. Operation names and types are the only GraphQL grouping dimensions.
 
-GraphQL services must provide one of the SDK's supported parser versions: `graphql@16.11.0` or `graphql@17.0.2`.
+GraphQL services must provide one of the SDK's supported parser versions: `graphql@16.11.0`, `graphql@17.0.2`, or `graphql@17.1.0`.
 Most GraphQL frameworks already provide the parser.
 
 ```sh
-bun add graphql@17.0.2
+bun add graphql@17.1.0
 ```
 
 The existing request evidence capture continues to store a bounded, structured-redacted JSON body when enabled, which may include the query
@@ -339,7 +339,7 @@ TypeORM does not need Inkronik-specific database configuration. Its existing `pg
 
 ### Postgres.js / Drizzle
 
-The Postgres.js instrumentation supports `postgres@3.4.9` and `postgres@4.0.0`.
+The Postgres.js instrumentation supports `postgres` versions `3.4.9`, `4.0.0`, and `4.1.1`.
 
 With the Bun preload agent, application database code remains unchanged:
 

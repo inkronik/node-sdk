@@ -35,10 +35,10 @@
         "typescript": "npm:@typescript/typescript6@6.0.2",
       },
       "peerDependencies": {
-        "@nestjs/common": "11.1.29 || 12.3.2",
-        "graphql": "16.11.0 || 17.0.2",
+        "@nestjs/common": "11.1.29 || 12.3.2 || 12.5.0",
+        "graphql": "16.11.0 || 17.0.2 || 17.1.0",
         "pg": "8.23.0",
-        "postgres": "3.4.9 || 4.0.0",
+        "postgres": "3.4.9 || 4.0.0 || 4.1.1",
         "rxjs": "7.8.2",
       },
       "optionalPeers": [
