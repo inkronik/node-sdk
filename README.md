@@ -234,6 +234,8 @@ app.use(createInkronikExpressMiddleware({ client: inkronik }))
 
 ## NestJS
 
+The NestJS adapter supports `@nestjs/common@11.1.29` and `@nestjs/common@12.3.2`.
+
 ```ts
 import { APP_INTERCEPTOR } from '@nestjs/core'
 import { createInkronikClientFromEnv } from '@inkronik/node-sdk'
